@@ -1,0 +1,97 @@
+#!/usr/bin/env python
+import sys
+from z3 import *
+
+"""
+1. input length is 10 chars at max.
+|           0x00001204      lea rax, [input]
+|           0x0000120b      mov rdi, rax ; const char *s
+|           0x0000120e      call sym.imp.strlen ; size_t strlen(const char *s)
+|           0x00001213      cmp rax, 0xb ; is len(input) < 11
+|       ,=< 0x00001217      jbe 0x122f
+------------------------------------------------------------------------------------------
+
+2. sum all chars from the input to match 0x3e8
+|      |`-> 0x0000122f      mov dword [idx], 0
+|      |,=< 0x00001236      jmp 0x124f
+|     .---> 0x00001238      mov eax, dword [idx]
+|     :||   0x0000123b      cdqe
+|     :||   0x0000123d      movzx eax, byte [input + rax]
+|     :||   0x00001245      movsx eax, al
+|     :||   0x00001248      add dword [input_sum], eax ; sum_input += input[idx]
+|     :||   0x0000124b      add dword [idx], 1
+|     :|`-> 0x0000124f      mov eax, dword [idx]
+|     :|    0x00001252      movsxd rbx, eax
+|     :|    0x00001255      lea rax, [input]
+|     :|    0x0000125c      mov rdi, rax ; const char *s
+|     :|    0x0000125f      call sym.imp.strlen ; size_t strlen(const char *s)
+|     :|    0x00001264      cmp rbx, rax
+|     `===< 0x00001267      jb 0x1238
+|      |    0x00001269      cmp dword [input_sum], 0x3e8 ; is input_sum == 0x3e8
+------------------------------------------------------------------------------------------
+
+3. input is not stripped from newlines, so this also goes into the char sum
+------------------------------------------------------------------------------------------
+
+4. Used z3 to solve this but it could also be done by hand.
+https://github.com/Z3Prover/z3
+pip install z3-solver
+------------------------------------------------------------------------------------------
+
+generate valid keys:
+------------------------------------------------------------------------------------------
+root@kali:~/bin_challs# ./rev03.py 
+sat
+uaaaaaaaaa
+abbbbbbbbm
+bbbbbbbbbl
+aajaaaaaal
+aaiaaaaaam
+aahaaaaaan
+aagaaaaaao
+aafaaaaaap
+aaeaaaaaaq
+aadaaaaaar
+< cut >
+
+test key:
+------------------------------------------------------------------------------------------
+root@kali:~/bin_challs# ./rev03
+enter the magic string
+uaaaaaaaaa
+flag is flag{!#&*/5<DMW}
+"""
+
+def get_models(s):
+	# from 0vercl0k's z3tools.py
+	while s.check() == sat:
+		m = s.model()
+		yield m
+		s.add(Or([sym() != m[sym] for sym in m.decls()]))
+
+
+def main():
+	# create a int list of 11 items and a solver
+	bv = IntVector('i', 11)
+	s = Solver()
+
+	# add ascii range constraints to the first 10 vectors.
+	# the real character base can be anything in the ascii range
+	# but for now limited to a..z
+	for i in range(len(bv)-1):
+		s.add(bv[i] >= ord('a'), bv[i] <= ord('z'))
+
+	# add last char is newline constraint to the last vector
+	s.add(bv[10] == 10)
+
+	# add the math constraint, sum of all chars is 0x3e8
+	s.add(Sum(bv) == 0x3e8)
+
+	# try to solve and print all solutions
+	if s.check() == sat:
+		for m in get_models(s):
+			print ''.join([chr(m[v].as_long()) for v in bv]).strip() # to strip the newline, the challange re-adds it
+
+
+if __name__ == '__main__':
+	main()

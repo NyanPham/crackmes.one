@@ -1,0 +1,31 @@
+There is a stack based buffer overflow due to the use of scanf("%s") in the main() function.
+
+To exploit this stack based buffer overflow, you are going to overwrite the entire stack and place a new return address so that when the program returns from main(), it will jump to the return address you specified.
+
+Also ASLR must be disabled on the system for this exploit to work.
+
+This is a simple buffer overflow but the fact it is 64-bit makes it just a little more tricky.
+
+This simple python script will craft an input buffer.  Then you can run the binary using ./a.out < inp
+
+
+
+from struct import *
+
+f = open("inp" , "w")
+
+f.write("A" * 184)
+f.write(pack("<Q", 0x555555555640))
+f.write("\n")
+f.close()
+
+
+
+
+Output of the program:
+
+Rules: you don't have the right to modify the binary, crack this crackme as if it was on a remote server on which you don't have write permissions.
+Give me your password: Bad password
+This is the good password!
+Segmentation fault
+

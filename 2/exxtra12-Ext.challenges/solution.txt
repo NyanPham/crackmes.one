@@ -1,0 +1,81 @@
+Using IDA pro (or readelf), we could see suspicious function called 'checkPassword'.
+From the name we can guess this function is intended to check whether our input meets certain criteria.
+
+Decompilation of checkPassword function:
+		_BOOL8 __fastcall checkPassword(__int64 a1)
+		{
+		size_t v1; // rax
+		int i; // [rsp-3Ch] [rbp-3Ch]
+		_BYTE v4[6]; // [rsp-36h] [rbp-36h]
+		__int64 v5; // [rsp-2Ch] [rbp-2Ch]
+		__int16 v6; // [rsp-24h] [rbp-24h]
+		__int16 v7; // [rsp-22h] [rbp-22h]
+		unsigned __int64 v8; // [rsp-18h] [rbp-18h]
+
+		v8 = __readfsqword(0x28u);
+		strcpy(v4, "badbeef12");
+		v5 = 0x20A170C050A1410LL;
+		v6 = 6;
+		for ( i = 0; i <= strlen(v4); ++i )
+		*((_BYTE *)&v7 + i) = *(_BYTE *)(i + a1) ^ v4[i];
+		v1 = strlen((const char *)&v5);
+		return strncmp((const char *)&v7, (const char *)&v5, v1) == 0;
+		}
+Information we can gather from the result above:
+		1. Our input (a1) is XOR-ed with v4, which contain strings 'deadbeef12'
+		2. The result (stored in v7) is compared with v5, which contains a hex value of '0x20A170C050A1410',
+		   which means 'v5 = input ^ v4'
+
+As we know, XOR is a 'magical' bitwise operator, it could make matemathical calculation 'reverseable'.
+Exclusive or (XOR) is a logical operation that outputs true only when inputs differ (wikipedia), XOR TABLE:
+		--------------
+       |A | B | Output|
+	   |--------------|
+	   |0 | 0 |   0	  |
+	   |1 | 0 |   1   |
+	   |0 | 1 |   1   |
+	   |1 | 1 |   0   |
+		--------------
+Example swapping number using XOR: 
+		Let a = 5, and b = 3
+		a = 5    -> 101
+		b = 3    -> 011 
+
+		a = a^b  -> 101
+					011
+					-----XOR
+					110 -> a with value of 6
+
+		b = b^a  -> 011
+					110
+					-----XOR
+					101 -> b with value of 5
+
+		a = a^b  -> 110
+					101
+					----XOR
+					011 -> a with value of 3
+		a = 3
+		b = 5
+Without using new variable or other mathematical function we can swap the value of a and b.
+
+Another example:
+		1. Consider the formula a = b*c, where a is 10 and c is 2, we can get the value of b with formula b = a/c.
+		2. This rule also applicable with XOR operator, with a minor difference. Consider a = b^c, where a = 10 and c 2.
+		   To get the value of b, we can use formula b = a^c
+
+With the same rule applied above, if 'v5 = input^v4' then 'input = v5^v4'.
+
+SOLVER (python):
+# because of endianness, we need to rewrite the value of v5 in reverse order
+v5 = [0x10, 0x14, 0x0a, 0x05, 0x0c, 0x17, 0x0a, 0x02, 0x06]
+v4 = 'badbeef12'
+
+input = ""
+for i in range(0,9):
+    input+=chr(v5[i]^ord(v4[i])) # XOR the int value of each index on v5 and v4, then make the int as a printable character using 'chr()' 
+
+print input
+
+
+RESULT: rungirl34

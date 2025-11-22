@@ -1,0 +1,35 @@
+# Ignore IDA Pro files
+*.i64
+*.idb
+*.id0
+*.id1
+*.id2
+*.nam
+*.til
+*.map
+
+# Ignore Ghidra files
+*.gpr
+*.rep/
+
+# Ignore compiled output
+*.exe
+*.out
+*.o
+*.obj
+
+# Ignore common build directories
+build/
+bin/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Other tool caches
+.pytest_cache/
+.mypy_cache/
+
+# Editor/IDE directories
+.vscode/
+.idea/

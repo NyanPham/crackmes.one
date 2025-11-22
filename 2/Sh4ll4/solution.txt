@@ -1,0 +1,45 @@
+Author: erfur
+Date: Tue Aug 14 23:46:37 +03 2018
+Challenge: destructeur's Sh4ll4
+
+The challenge is a relatively easy keygenme. After disassembling the
+code the first thing to notice is that 4 strings are being built into the
+stack:
+
+str1: zaa4h9z1ga8ga5g1h8z4
+str2: e18ah41z8h1ah05za9hg
+str3: z2zh8a4g94ah1z9hg1aa
+str4: GHh4a9hHRZJQk8z1h12z
+
+Then function() is called and inside there is a ptrace(). Now if the
+ptrace returns 0 (which is what we want) then the string 
+
+'142x142x121x1424421x'
+
+is returned. If not, then the string without the 'x' at the end will be
+returned. This bit will be important later. We will call this string the
+formatstr.
+
+After getting the length of formatstr (which is 21) program asks for
+20 bytes of input. After the seemingly complex register shenanigans
+(which is only done in order to create space for new strings) the
+program starts iterating over the formatstr. Each character is one of
+{'1','2','3','4','x'}, and there is a block to run for each of them.
+
+The following characters are appended to create the correct password:
+'x': 'S'
+'1': str2[offset]
+'2': str1[offset]
+'3': str3[offset]
+'4': str4[offset]
+
+After each iteration, the program will check the last character of the
+formatstr. If its not 'x' then youwillneveeeeerwindude(-1) will be
+called, you can alredy guess that no good will come from a -1 :)
+
+If the ptrace() in function youwillneveeeeerwindude() fails, your
+input characters will be switched with '?' so that under debugger, even
+if you enter the correct password, you wont get the correct message.
+
+After constructing the correct password we get:
+eHaSh9zS8a1Sh8g1h8hS

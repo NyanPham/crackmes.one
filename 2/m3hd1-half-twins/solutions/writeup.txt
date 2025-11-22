@@ -1,0 +1,33 @@
+Looking at the assembly code for the binary we can see that the first conditional jump checks
+if argc is equal to 3, this just checks if the user has supplied two command line arguments
+while starting the program. If these arguments are not provided we get a failure message
+telling us 'better luck next time'.
+We can see that the next block of code stores argv[1] and argv[2] in their own variables.
+It then passes a pointer to argv[1] to 'strlen()' this value is stored in its own variable
+which is then tested to see if it is above 6. The next code block just does the same thing for
+argv[2].
+
+In the next block of code (the fourth), both arguments are passed to 'strlen()' having the return
+values stored in 'RBX' and 'RAX' respectively. These values are then compared for equality. If
+the values are equal we pass the conditional jump immediately following the test.
+
+The next check is a a bit hard to tell what our inputs need to be as it performs a bitwise and on
+the length of the first argument, (this could be something the compiler added). I started looking
+at what happens after this block and it looks as though we drop into two for loops (one
+following the other). These for loops loop through the first and second half of each argument
+respectively. these loops check that the first half of each argument are the same bytes and
+that the second halves of each argument are not equal. So for example I entered:
+
+'AAAAAAAA', 'AAAABBBB'
+
+This gives us the sucess message, so to sum things up.
+
+
+
+KEY POINTS:
+	Must supply two command line arguments
+	Both keys must have a len greater than 6
+	Both key lengths must be equal
+	The first half of each key must be equal
+	The second half of each argument must not be equal.
+

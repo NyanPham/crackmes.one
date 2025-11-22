@@ -1,0 +1,31 @@
+Solution is
+dddddddddZ
+
+Why?
+
+Because the program reads the user input
+Then checks that the length must be < 11 chars
+Then it takes each char one by one and takes the ASCII number of each char
+And adds them together
+And checks that the result must be == 1000
+Then prints out the flag using a for loop with exactly 10 iterations
+
+This means the password must me 10 chars long
+And that the ASCII sum must be = 1000
+So you divide 1000 by 10
+You find 100
+And ASCII 100 is character "d"
+So you put 10 "d", that's like 10 times 100 = 1000 right?
+WRONG
+Because you also type ENTER to submit your input
+And ENTER is ASCII 10
+If you submit 10 "d" + 1 ENTER you get 1010.
+Not 1000
+So, you need to have 9 "d", which gives 900
+Then you know you will type ENTER which is 10, so now you are at 910.
+This means the last 10th character has to be ASCII 90.
+So that 910+90=1000
+And what is ASCII 90? It's "Z".
+So the answer is
+9 "d" and 1 "z" and 1 ENTER
+The sum of all of these ASCII characters = 1000

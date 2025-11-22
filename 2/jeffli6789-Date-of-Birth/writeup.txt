@@ -1,0 +1,231 @@
+First of all we start from basics.
+Running file on ./date_of_birth gives us some info:
+-- the file is 64-bit binary
+-- dynamically linked
+-- symbols are stripped
+
+So the file will use System V convention to make calls to functions, it means that arguments will be loaded in rsi, rdi,
+
+The file is dynamically linked, which means that disassembler should be able to see calls to libc functions
+
+The symbols are stripeed, which means, that we can't directly use the debugger, let's try though.
+
+So we run gdb ./date_of_birth:
+Because we have no symbols, there is no point in setting breakpoints on _start or main, since the debugger can't find them.
+So let's try to find the entry point
+(gdb) info file
+Local exec file:
+        Entry point: 0x8c0
+        0x0000000000000238 - 0x0000000000000254 is .interp
+        0x0000000000000254 - 0x0000000000000274 is .note.ABI-tag
+        0x0000000000000274 - 0x0000000000000298 is .note.gnu.build-id
+        0x0000000000000298 - 0x00000000000002b4 is .gnu.hash
+        0x00000000000002b8 - 0x00000000000003f0 is .dynsym
+        0x00000000000003f0 - 0x00000000000004ad is .dynstr
+        0x00000000000004ae - 0x00000000000004c8 is .gnu.version
+        0x00000000000004c8 - 0x00000000000004f8 is .gnu.version_r
+        0x00000000000004f8 - 0x00000000000005b8 is .rela.dyn
+        0x00000000000005b8 - 0x0000000000000660 is .rela.plt
+        0x0000000000000660 - 0x0000000000000677 is .init
+        0x0000000000000680 - 0x0000000000000700 is .plt
+        0x0000000000000700 - 0x0000000000000708 is .plt.got
+        0x0000000000000710 - 0x0000000000000b52 is .text
+        0x0000000000000b54 - 0x0000000000000b5d is .fini
+        0x0000000000000b60 - 0x0000000000000c86 is .rodata
+        0x0000000000000c88 - 0x0000000000000ccc is .eh_frame_hdr
+        0x0000000000000cd0 - 0x0000000000000e18 is .eh_frame
+        0x0000000000201d88 - 0x0000000000201d90 is .init_array
+        0x0000000000201d90 - 0x0000000000201d98 is .fini_array
+        0x0000000000201d98 - 0x0000000000201f88 is .dynamic
+        0x0000000000201f88 - 0x0000000000202000 is .got
+        0x0000000000202000 - 0x0000000000202010 is .data
+        0x0000000000202010 - 0x0000000000202018 is .bss
+
+from the output we get the address of the entry point of our program: 0x8c0
+Let's try to set a breakpoint there.
+
+(gdb) b *0x8c0
+Breakpoint 1 at 0x8c0
+
+Now that we set a breakpoint, let's start the program.
+
+(gdb) r
+Starting program: ......../date_of_birth
+
+[2]+  Stopped                 gdb date_of_birth
+
+Oh. It looks like gdb got SIGSTOP. Well, that's looks like some anti-debugging technique. We could try to resume the process by typing fg.
+
+$ fg
+gdb date_of_birth
+Warning:
+Cannot insert breakpoint 1.
+Cannot access memory at address 0x8c0
+
+(gdb)
+
+Well, it seems that we couldn't use debugger. So let's look at the dissasembly. I had used IDA for this purposes.
+
+Firstly, we see the entry point of our program. Nothing unusual here, so let's move to main.
+
+.text:0000557E6212F710                 push    r13
+.text:0000557E6212F712                 push    r12
+.text:0000557E6212F714                 mov     r13d, edi
+.text:0000557E6212F717                 push    rbp
+.text:0000557E6212F718                 push    rbx
+.text:0000557E6212F719                 lea     rdi, s          ; "Welcome to Discard App -- a new way to "...
+.text:0000557E6212F720                 sub     rsp, 98h
+.text:0000557E6212F727                 mov     rax, fs:28h     ; stack canary
+.text:0000557E6212F730                 mov     [rsp+0B8h+var_30], rax
+.text:0000557E6212F738                 xor     eax, eax
+.text:0000557E6212F73A                 call    _puts
+
+So we save registers, load the string pointer into the rdi register(remember we are using System V ABI convention) and allocate space for local variables in the stack.
+Next at 0x727 we have mov rax, fs:28h which is then loaded on to the stack. This is actually a stack canary. A method of protecting the program from buffer overflow. So let's rename var_30 to stack_canary.
+We then call puts to print our string.
+
+Then we have some more puts calls. Nothing unusual.
+
+.text:0000557E6212F761                 pxor    xmm0, xmm0
+.text:0000557E6212F765                 lea     rdi, format     ; "%20s"
+.text:0000557E6212F76C                 mov     rsi, rbp
+.text:0000557E6212F76F                 xor     eax, eax
+.text:0000557E6212F771                 mov     [rsp+0B8h+var_38], 0
+.text:0000557E6212F77C                 movaps  xmmword ptr [rsp+0B8h+s], xmm0
+.text:0000557E6212F781                 movaps  [rsp+0B8h+var_B8], xmm0
+.text:0000557E6212F785                 call    _scanf
+
+Here we have scanf call, but there is more to it. So the program nulls xmm0 register and the doing something with memory. As you can see it nulls var_38 and then moves xmm0 to 2 blocks of memory. So basically it nulls some place in memory. I think the program is doing this so the scanf call will write a valid C-string(which terminates with null byte). Because the whole chunk is nulled it doesn't matter how long the string will be -- if it is no bigger than the size of an array everything would be fine.
+We call scanf with "%20s" argument. It means that scanf will read only 20 characters from stdin. In rsi we load the address of s variable(the array, where we would store our input). It was saved in rbp previously at 0x746.
+
+.text:0000557E6212F78A                 lea     rsi, fmt        ; "%m/%d/%Y"
+.text:0000557E6212F791                 mov     rdx, rbx        ; tp
+.text:0000557E6212F794                 mov     rdi, rbp        ; s
+.text:0000557E6212F797                 movdqa  xmm0, [rsp+0B8h+var_B8]
+.text:0000557E6212F79C                 mov     [rsp+0B8h+tp.tm_zone], 0
+.text:0000557E6212F7A5                 movaps  xmmword ptr [rsp+0B8h+tp.tm_sec], xmm0
+.text:0000557E6212F7AA                 movaps  xmmword ptr [rsp+0B8h+tp.tm_mon], xmm0
+.text:0000557E6212F7AF                 movaps  xmmword ptr [rsp+0B8h+tp.tm_isdst], xmm0
+.text:0000557E6212F7B4                 call    _strptime
+
+We load date format string in rsi(second arg). Some tp in rdx(third arg) and s address in rdi(first arg).
+So tp is actually the tm structure which program creates in local memory. The program then nulls unnecessary fields(as we can see from the format string we only need month, day and year, also I believe that IDA interpreted some fields wrong, so don't rely on it).
+So in pseudo-code I believe it will look something like this:
+
+struct tm current_date;
+char s[21];
+puts("welcome...");
+puts("we need to verify...");
+puts("please type your date");
+scanf("%20s", s);
+birth_date.tm_sec = 0;
+birth_date.tm_min = 0;
+birth_date.tm_hour = 0;
+birth_date.tm_isdst = 0;
+strptime(s, "%m/%d/%Y", &birth_date);
+
+.text:0000557E6212F7B9                 mov     rdi, rbx        ; tp
+.text:0000557E6212F7BC                 call    _mktime
+
+Here we just convert our structure into seconds from epoch.
+
+.text:0000557E6212F7C1                 xor     edi, edi        ; timer
+.text:0000557E6212F7C3                 mov     rbx, rax
+.text:0000557E6212F7C6                 call    _time
+
+here we store the seconds of our birth date in rbx and get current time(time(NULL))
+
+.text:0000557E6212F7CB                 lea     rdi, [rsp+0B8h+timer] ; timer
+.text:0000557E6212F7D0                 mov     [rsp+0B8h+timer], rax
+.text:0000557E6212F7D5                 call    _localtime
+.text:0000557E6212F7DA                 mov     rax, [rsp+0B8h+timer]
+.text:0000557E6212F7DF                 lea     rdi, [rsp+0B8h+var_90] ; timer
+.text:0000557E6212F7E4                 sub     rax, rbx
+.text:0000557E6212F7E7                 mov     [rsp+0B8h+var_90], rax
+.text:0000557E6212F7EC                 call    _localtime
+
+So the "timer" which IDA wrote is a variable where the current time in seconds from epoch will be stored. First localtime call looks like completely useless because localtime doesn't modify the argument which we pass to it(from localtime man: struct tm *localtime(const time_t *timep);) and the next instruction after the first localtime call just erases the result of localtime.
+
+The next call is more interesting. In rax we load current time in seconds. In rdi we load some variable address(first arg).
+Do you remember what we had in rbx? That's right it's our birth date in seconds.
+We then substract birth date from current time to find the difference between the two.
+
+.text:0000557E6212F7F1                 mov     r12d, [rax+0Ch] ; r12d = day of the month
+.text:0000557E6212F7F5                 mov     ebx, [rax+14h]  ; ebx = year - 1900
+.text:0000557E6212F7F8                 mov     ebp, [rax+10h]  ; ebp = month
+.text:0000557E6212F7FB                 lea     eax, [r12+1]    ; eax = day of the month + 1
+.text:0000557E6212F800                 sub     ebx, 46h ; 'F'  ; ebx = year - 1970
+.text:0000557E6212F803                 mov     edx, ebx        ; edx = year - 1970
+.text:0000557E6212F805                 cmp     al, 1Eh         ; day of the month + 1 <= 30?
+.text:0000557E6212F807                 jle     short loc_557E6212F853
+
+I hope the comments are self-explanatory. Here is how tm structure is defined in <time.h>
+struct tm {
+               int tm_sec;    /* Seconds (0-60) */
+               int tm_min;    /* Minutes (0-59) */
+               int tm_hour;   /* Hours (0-23) */
+               int tm_mday;   /* Day of the month (1-31) */
+               int tm_mon;    /* Month (0-11) */
+               int tm_year;   /* Year - 1900 */
+               int tm_wday;   /* Day of the week (0-6, Sunday = 0) */
+               int tm_yday;   /* Day in the year (0-365, 1 Jan = 0) */
+               int tm_isdst;  /* Daylight saving time */
+           };
+Because all fields are int, the offset of each field is field number * 4. Also we substract 70 because time counts from epoch.
+
+So if we pass the check(providing day <= 29) we get there:
+
+text:0000557E6212F853 loc_557E6212F853:                       ; CODE XREF: main+F7↑j
+.text:0000557E6212F853                 cmp     bpl, 0Bh        ; month <= 11?
+.text:0000557E6212F857                 jle     short loc_557E6212F89E
+
+This check will always pass. Because tm gives month in range 0-11. It leads us here:
+
+.text:0000557E6212F89E                 cmp     r12b, al
+.text:0000557E6212F8A1                 jge     short loc_557E6212F862
+
+Here we have day of the month >= day of the month + 1. And this check WOULD ALWAYS FAIL!
+Since day of the month ranges from 1 to 31, no overflow could happen.
+And it leads us to "fail screen"(((.
+
+Let's look at other branches:
+
+If we fail the check day of the month + 1 <= 30 we get there:
+
+.text:0000557E6212F809                 lea     ecx, [rbp+1]    ; ecx = month + 1(1-12)
+.text:0000557E6212F80C                 xor     eax, eax        ; eax = 0
+.text:0000557E6212F80E                 cmp     cl, 0Bh         ; month(1-12) > 11?
+.text:0000557E6212F811                 jg      short loc_557E6212F859
+
+So, I understand that we are very close to the end, but let's look what happens if we fail this check
+
+.text:0000557E6212F813                 cmp     bpl, cl
+.text:0000557E6212F816                 jge     loc_557E6212F89C
+
+So we have check month >= month + 1 which would also ALWAYS FAIL! Month ranges from 0 to 11, so no overflow again and it leads us to "fail screen"(((.
+
+If we pass day of the month + 1 <= 30(so 30 or 31):
+
+.text:0000557E6212F859                 lea     ecx, [rbx+1]
+.text:0000557E6212F85C                 cmp     cl, dl
+.text:0000557E6212F85E                 jg      short loc_557E6212F81C
+
+So we load year + 1 into ecx and then check cl > dl
+And that's where things start to get interesting.
+So we now that year can be very big. And here we only compare LEAST SIGNIFICANT BYTE! And also we use jg so we compare SIGNED char. It means that we check values in range -128 - 127. So this check WOULD fail if rbx would have 127. Then cl would have 127 + 1 = -128. -128 obviously is less than 127.
+
+And failing the check leads us to "victory" message!
+
+So
+
+---------------------
+| B A S I C A L L Y |
+---------------------
+
+We need to input such date that the difference between current date and input date would be 30 or 31 days, 11 months and difference in years should have 0x7f as it's last byte.
+
+The date I'm writing this writeup is October 13, 2020. So 10/13/1892 works! 10/14/1124 too!
+There is also keygen.py. You could try for yourself. It's actually would be easier to write it in plain C, because python for some reason doesn't have timedelta for years and months by default.
+
+
+P.S.: The challenge was really fun. I actually missed that byte compare at first. Learned much too.

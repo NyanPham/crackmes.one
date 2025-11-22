@@ -1,0 +1,179 @@
+This crackme primarily revolves around the main() procedure/function. We start of as follows:
+
+0x00001149      push    rbp
+0x0000114a      mov     rbp, rsp
+0x0000114d      push    rbx
+0x0000114e      sub     rsp, 0x48
+0x00001152      mov     dword [var_44h], edi ; argc
+0x00001155      mov     qword [var_50h], rsi ; argv
+0x00001159      lea     rax, str.good_luck_next_time ; 0x2008
+0x00001160      mov     qword [s], rax
+0x00001164      cmp     dword [var_44h], 3
+0x00001168      je      0x118c
+
+Clearly, argc = var_44h = 3 to execute "je 0x118c" (otherwise we get "i'm not sure you know..."). So we need 2 arguments apart from filename. We move on to the next check at 0x118c:
+
+0x0000118c      mov     rax, qword [var_50h]
+0x00001190      mov     rax, qword [rax + 8]
+0x00001194      mov     qword [var_20h], rax
+0x00001198      mov     rax, qword [var_50h]
+0x0000119c      mov     rax, qword [rax + 0x10]
+0x000011a0      mov     qword [var_18h], rax
+0x000011a4      mov     rax, qword [var_20h]
+0x000011a8      mov     rdi, rax   ; const char *s
+0x000011ab      call    strlen     ; sym.imp.strlen ; size_t strlen(const char *s)
+0x000011b0      cmp     rax, 6
+0x000011b4      ja      0x11d8
+
+0x000011d8      mov     rax, qword [var_18h]
+0x000011dc      mov     rdi, rax   ; const char *s
+0x000011df      call    strlen     ; sym.imp.strlen ; size_t strlen(const char *s)
+0x000011e4      cmp     rax, 6
+0x000011e8      ja      0x120c
+
+Here, we have var_20h = argv[1] and var_18h = argv[2]. We see that strlen(argv[1]) and strlen(argv[2]) needs to be greater than 6 (otherwise we obtain the "XXX im older than that" message). So we need 2 arguments of length greater than 6. Lets proceed to the check at 0x120c:
+
+0x0000120c      mov     rax, qword [var_20h]
+0x00001210      mov     rdi, rax   ; const char *s
+0x00001213      call    strlen     ; sym.imp.strlen ; size_t strlen(const char *s)
+0x00001218      mov     rbx, rax
+0x0000121b      mov     rax, qword [var_18h]
+0x0000121f      mov     rdi, rax   ; const char *s
+0x00001222      call    strlen     ; sym.imp.strlen ; size_t strlen(const char *s)
+0x00001227      cmp     rbx, rax
+0x0000122a      je      0x124e
+
+Here, we check that strlen(argv[1]) = strlen(argv[2]), implying that both arguments must be of the same length (otherwise you get "we were born with the same height..."), moving on to 0x124e...
+
+0x0000124e      mov     rax, qword [var_20h]
+0x00001252      mov     rdi, rax   ; const char *s
+0x00001255      call    strlen     ; sym.imp.strlen ; size_t strlen(const char *s)
+0x0000125a      and     eax, 1
+0x0000125d      test    rax, rax
+0x00001260      je      0x1284
+
+Here, we check that strlen(argv[1]) = strlen(argv[2]) is even (otherwise we get "we are not odd years old"). Moving on to 0x1284...
+
+// LOOP #1 initialization
+0x00001284      mov     rax, qword [var_20h]
+0x00001288      mov     rdi, rax   ; const char *s
+0x0000128b      call    strlen     ; sym.imp.strlen ; size_t strlen(const char *s)
+0x00001290      shr     rax, 1
+0x00001293      mov     dword [var_30h], eax
+0x00001296      mov     dword [var_34h], 0
+0x0000129d      jmp     0x12e6
+
+Starting here, we encounter loops so we start keeping track of variables. The variables are now as follows:
+
+var_18h = argv[2]
+var_20h = argv[1]
+var_30h = strlen(argv[1]) >> 1
+var_34h = 0
+
+Moving forward to 0x12e6, we have the loop outlined as follows (annotated with comments too):
+
+// LOOP #1 comparison
+0x000012e6      mov     eax, dword [var_34h]
+0x000012e9      cmp     eax, dword [var_30h]
+0x000012ec      jl      0x129f						; var_34h < half of strlen(argv[1])
+
+// LOOP #1 body
+0x0000129f      mov     eax, dword [var_34h]
+0x000012a2      movsxd  rdx, eax
+0x000012a5      mov     rax, qword [var_20h]
+0x000012a9      add     rax, rdx					
+0x000012ac      movzx   edx, byte [rax]				; get argv[1][var_34h]
+
+0x000012af      mov     eax, dword [var_34h]		
+0x000012b2      movsxd  rcx, eax
+0x000012b5      mov     rax, qword [var_18h]		
+0x000012b9      add     rax, rcx
+0x000012bc      movzx   eax, byte [rax]				; get argv[2][var_34h]
+
+0x000012bf      cmp     dl, al
+0x000012c1      je      0x12e2						; Take this branch (otherwise we get "we are half twins you know...")
+
+// LOOP #1 increment
+0x000012e2      add     dword [var_34h], 1
+
+Here, we can observe that effectively speaking, the first half of argv[1] and argv[2] must be the same, and the C code is as follows:
+
+for (int var_34h = 0; var_34h < strlen(argv[1]) / 2; var_34h++) {
+	if (argv[0][var_34h] == argv[1][var_34h]) continue;
+	printf("...We are half twins you know...\n");
+	return 0;
+}
+
+Lets proceed to the scenario where we are done checking with the first half of the string (i.e. don't take jl 0x129f):
+
+// LOOP #2 initialization
+0x000012ee      mov     rax, qword [var_20h]
+0x000012f2      mov     rdi, rax   ; const char *s
+0x000012f5      call    strlen     ; sym.imp.strlen ; size_t strlen(const char *s)
+0x000012fa      mov     dword [var_2ch], eax
+0x000012fd      jmp     0x1346
+
+// LOOP #2 comparison
+0x00001346      mov     eax, dword [var_34h]	; Same counter from just now, var_34h = strlen(argv[1]) / 2
+0x00001349      cmp     eax, dword [var_2ch]	; var_34h < strlen(argv[1])
+0x0000134c      jl      0x12ff
+
+// LOOP #2 body
+0x000012ff      mov     eax, dword [var_34h]
+0x00001302      movsxd  rdx, eax
+0x00001305      mov     rax, qword [var_20h]
+0x00001309      add     rax, rdx
+0x0000130c      movzx   edx, byte [rax]			; get argv[1][var_34h]
+0x0000130f      mov     eax, dword [var_34h]
+0x00001312      movsxd  rcx, eax
+0x00001315      mov     rax, qword [var_18h]
+0x00001319      add     rax, rcx
+0x0000131c      movzx   eax, byte [rax]			; get argv[2][var_34h]
+0x0000131f      cmp     dl, al
+0x00001321      jne     0x1342					; Take this branch (otherwise we get "...we are only HALF twins...")
+
+// LOOP #2 increment
+0x00001342      add     dword [var_34h], 1
+
+// End of program (don't take branch at 0x134c)
+0x0000134e      lea     rdi, str.Abby___Gabby:_yaayy___nice_job__:D ; 0x2178 ; const char *s
+0x00001355      call    puts       ; sym.imp.puts ; int puts(const char *s)
+0x0000135a      mov     eax, 0
+
+The loop structure is very similar, in fact we are basically now checking the 2nd half of the string is different. This allows us to summarize the arguments to solve this crackme as:
+- 2 arguments X,Y such that
+- strlen(X) = strlen(Y) AND strlen(X) > 6 AND strlen(Y) > 6 AND strlen(X) is even AND strlen(Y) is even
+- 1st half of X and Y have same characters, and 2nd half of X and Y have different characters at each position
+
+A simple python3 keygen is as follows:
+
+import random
+# Use some nice printable chars
+charset = 'abcdefgijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*_-+~/.,'
+# 2 arguments
+s1 = ""
+s2 = ""
+# Even length at least 8
+length = 1
+while length % 2 != 0:
+	length = random.randint(8, 20) # Can be > 20 char if you like?
+# Generate first half
+for _ in range(length // 2):
+	s1 += charset[random.randint(0, len(charset) - 1)]
+	s2 += s1[-1]
+# Generate second half
+for _ in range(length // 2):
+	s1 += charset[random.randint(0, len(charset) - 1)]
+	c = charset[random.randint(0, len(charset) - 1)]
+	while c == s1[-1]:
+		c = charset[random.randint(0, len(charset) - 1)]
+	s2 += c
+# Display
+print('Use without quotes: \"' + s1 + '\" \"' + s2 + '\"')
+
+Example output that works: ./half-twins aaaaqwer aaaarewq
+
+
+
+
+

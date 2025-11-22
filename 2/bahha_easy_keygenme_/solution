@@ -1,0 +1,43 @@
+				LinuxH11
+
+Tools used 
+GDB
+radare2
+ascii table
+
+put break at main [break main]
+type run
+breaked at main
+put breakpoint at *main+396
+x/xg rbp-0xa0	= local_a0h
+then this address = where key is 
+x/sb <address> to see string output
+put another break at main+404
+then continue c
+the address now has a string stored [this is your key]
+type x/sb <address> key shows
+
+i used python and used ansii table to compare 
+
+user = input("enter username:")
+for c in user :
+	ord(c)
+prints user into decimals
+now what ever length your username is will be this 
+user = input("enter username:")
+enter username: cracked
+>>>for c in user :
+...	ord(C)+7  << notice the amount u add is the same as the length of the char
+...
+106 = j
+121 = y
+104 = h
+106 = j
+114 = r
+108 = l
+107 = k
+>>> 
+so what ever language you use it is char to int then add string length
+
+[note]
+First linux reverse

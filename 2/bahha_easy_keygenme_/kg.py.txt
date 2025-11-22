@@ -1,0 +1,43 @@
+#!/usr/bin/env python
+"""
+1. username is atleast 2 and max 16 chars, numbers and special characters are not allowed.
+2. algo is a simple input length based ROT
+
+root@kali:~# python kg.py cone
+gsri
+root@kali:~# ./keygenme
+
+
+Hi! can you  write a keygen for this challenge, don't just patch :)  
+
+Enter Username: cone
+Enter a Key: gsri
+
+
+
+Congratulation you got the Key !
+"""
+
+import sys
+
+def gks(username):
+	keybuf = bytearray(username)
+	sz = len(username)
+	for i in xrange(sz):
+		for j in xrange(sz):
+			if keybuf[i] == 'z':
+				keybuf[i] = 'a'
+			elif keybuf[i] == 'Z':
+				keybuf[i] = 'A'
+			else:
+				keybuf[i] += 1
+	return keybuf
+
+def generate(username):
+	print gks(username)
+
+if __name__ == '__main__':
+	if len(sys.argv) != 2:
+		print 'Usage: python kg.py <username>'
+	else:
+		generate(sys.argv[1])

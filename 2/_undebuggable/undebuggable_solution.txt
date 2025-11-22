@@ -1,0 +1,721 @@
+While this program would be a pain to use a debugger on, in fact it's not that bad to analyze statically, as I will do in this solution.
+
+This is an exercise in following the interactions of a parent and child process. Broadly speaking, their interactions are as follows:
+
+(i)   The parent decrypts an encrypted code block and loads it into a shared memory segment.
+(ii)  The child executes this code block, while the parent traces it.
+(iii) The parent then carries out instructions depending on the actions of the child. Among these actions are three further code block decryptions, each of which carries out a certain check on the given password.
+(iv)  The child carries out these newly decrypted password checks.
+
+If the password checks are successful, the program will attempt to display to the screen the contents of a file called 'flag' in the current directory; note, it does this even if the file does not exist, which will result in a segfault :(
+
+
+
+============================
+  A more detailed analysis
+============================
+
+Before forking, the program carries out some basic tasks:
+
+- Prints welcome message
+- Removes any existing message queue associated to the key 0x1337
+- Removes any shared memory segment associated to the key 1337 (decimal, not hex).
+
+Most importantly, though, it creates a memory mapping shared_mmap that will be shared between the parent and child. The decrypted code the parent later generates will be loaded to this shared memory, where the child will be able to run it.
+
+At this point, the process forks, and the interplay between parent and child begins.
+
+
+***** Initial decryption *****
+
+After the fork, the child immediately sleeps for 1 second. This gives the parent time to complete some setup tasks:
+
+- First, the parent calls transfer_code(). This function decrypts encrypted_code, a section of the binary, and loads the result into shared_mmap. The decryption is very simple: it simply xors 0x55 into each byte of encrypted_code.
+- Afterwards, the parent calls waitpid, essentially waiting for the child's next move.
+
+What does the decrypted code look like? We can figure this out statically by simply doing the decryption ourselves. First, let's look for where encrypted_code is within the binary:
+
+     > objdump -x undebuggable | grep encrypted_code
+     0000000000203020 g     O .data  000000000000019e              encrypted_code
+
+It's in the .data section. We can figure out exactly where in the .data section by looking at the symbols within the .data section:
+
+     > objdump -t -j .data undebuggable
+
+     undebuggable:     file format elf64-x86-64
+     
+     SYMBOL TABLE:
+     0000000000203000 l    d  .data	0000000000000000              .data
+     0000000000203000  w      .data	0000000000000000              data_start
+     000000000020338e g       .data	0000000000000000              _edata
+     00000000002032e0 g     O .data	00000000000000ae              check3_code
+     0000000000203000 g       .data	0000000000000000              __data_start
+     00000000002031c0 g     O .data	000000000000006c              check1_code
+     0000000000203008 g     O .data	0000000000000000              .hidden __dso_handle
+     0000000000203240 g     O .data	0000000000000099              check2_code
+     0000000000203020 g     O .data	000000000000019e              encrypted_code
+     0000000000203390 g     O .data	0000000000000000              .hidden __TMC_END__
+
+
+It appears that encrypted_code is at an offset of 0x20 within the .data section and has length 0x19d. Since other parts of the .data section look like they'll be relevant to us (all the check_code blocks will show up later), let's simply copy the contents of .data to a file called data_section:
+
+     > objcopy --dump-section .data=data_section undebuggable
+
+Now a simple python script will decrypt the encrypted_code block:
+
+     with open('data_section', 'rb') as f:
+         encrypted_code = f.read()[0x20 : 0x20+0x19d]
+     with open('decrypted_function', 'wb') as f:
+         f.write(bytes([b^0x55 for b in encrypted_code]))
+
+To see the contents of decrypted code block, we can objdump it:
+
+     > objdump -D -M intel,x86-64 -b binary -m i386 decrypted_function
+     
+     decrypted_function:     file format binary
+     
+     
+     Disassembly of section .data:
+     
+     00000000 <.data>:
+        0:	55                   	push   rbp
+        1:	48 89 e5             	mov    rbp,rsp
+        4:	48 83 ec 40          	sub    rsp,0x40
+        8:	ba 20 00 00 00       	mov    edx,0x20
+        d:	48 8d 74 24 08       	lea    rsi,[rsp+0x8]
+       12:	bf 00 00 00 00       	mov    edi,0x0
+       17:	b8 01 00 00 00       	mov    eax,0x1
+       1c:	0f 05                	syscall 
+       1e:	be b6 03 00 00       	mov    esi,0x3b6
+       23:	bf 37 13 00 00       	mov    edi,0x1337
+       28:	b8 3e 00 00 00       	mov    eax,0x3e
+       2d:	0f 05                	syscall 
+       2f:	48 89 44 24 28       	mov    QWORD PTR [rsp+0x28],rax
+       34:	48 c7 04 24 01 00 00 	mov    QWORD PTR [rsp],0x1
+       3b:	00 
+       3c:	b9 00 08 00 00       	mov    ecx,0x800
+       41:	ba 20 00 00 00       	mov    edx,0x20
+       46:	48 89 e6             	mov    rsi,rsp
+       49:	48 8b 7c 24 28       	mov    rdi,QWORD PTR [rsp+0x28]
+       4e:	b8 3d 00 00 00       	mov    eax,0x3d
+       53:	0f 05                	syscall 
+       55:	41 b8 00 00 00 00    	mov    r8d,0x0
+       5b:	b9 02 00 00 00       	mov    ecx,0x2
+       60:	ba 20 00 00 00       	mov    edx,0x20
+       65:	48 89 e6             	mov    rsi,rsp
+       68:	48 8b 7c 24 28       	mov    rdi,QWORD PTR [rsp+0x28]
+       6d:	b8 a5 00 00 00       	mov    eax,0xa5
+       72:	0f 05                	syscall 
+       74:	bf 05 00 00 00       	mov    edi,0x5
+       79:	b8 3f 00 00 00       	mov    eax,0x3f
+       7e:	0f 05                	syscall 
+       80:	ba ff 03 00 00       	mov    edx,0x3ff
+       85:	be 00 10 00 00       	mov    esi,0x1000
+       8a:	bf 39 05 00 00       	mov    edi,0x539
+       8f:	b8 02 00 00 00       	mov    eax,0x2
+       94:	0f 05                	syscall 
+       96:	48 89 44 24 28       	mov    QWORD PTR [rsp+0x28],rax
+       9b:	ba 00 00 00 00       	mov    edx,0x0
+       a0:	be 00 00 00 00       	mov    esi,0x0
+       a5:	48 8b 7c 24 28       	mov    rdi,QWORD PTR [rsp+0x28]
+       aa:	b8 2a 00 00 00       	mov    eax,0x2a
+       af:	0f 05                	syscall 
+       b1:	48 89 44 24 28       	mov    QWORD PTR [rsp+0x28],rax
+       b6:	be 01 00 00 00       	mov    esi,0x1
+       bb:	bf 01 00 00 00       	mov    edi,0x1
+       c0:	b8 0c 00 00 00       	mov    eax,0xc
+       c5:	0f 05                	syscall 
+       c7:	bf 05 00 00 00       	mov    edi,0x5
+       cc:	b8 6a 00 00 00       	mov    eax,0x6a
+       d1:	0f 05                	syscall 
+       d3:	48 8d 3d f9 02 00 00 	lea    rdi,[rip+0x2f9]        # 0x3d3
+       da:	48 8b 74 24 28       	mov    rsi,QWORD PTR [rsp+0x28]
+       df:	48 89 7c 24 30       	mov    QWORD PTR [rsp+0x30],rdi
+       e4:	b9 b0 00 00 00       	mov    ecx,0xb0
+       e9:	f3 a4                	rep movs BYTE PTR es:[rdi],BYTE PTR ds:[rsi]
+       eb:	48 8d 74 24 10       	lea    rsi,[rsp+0x10]
+       f0:	48 8d 7c 24 08       	lea    rdi,[rsp+0x8]
+       f5:	48 8b 44 24 30       	mov    rax,QWORD PTR [rsp+0x30]
+       fa:	ff d0                	call   rax
+       fc:	48 89 c6             	mov    rsi,rax
+       ff:	bf 02 00 00 00       	mov    edi,0x2
+      104:	b8 0c 00 00 00       	mov    eax,0xc
+      109:	0f 05                	syscall 
+      10b:	bf 05 00 00 00       	mov    edi,0x5
+      110:	b8 69 00 00 00       	mov    eax,0x69
+      115:	0f 05                	syscall 
+      117:	48 8d 3d f9 02 00 00 	lea    rdi,[rip+0x2f9]        # 0x417
+      11e:	48 8b 74 24 28       	mov    rsi,QWORD PTR [rsp+0x28]
+      123:	48 89 7c 24 30       	mov    QWORD PTR [rsp+0x30],rdi
+      128:	b9 b0 00 00 00       	mov    ecx,0xb0
+      12d:	f3 a4                	rep movs BYTE PTR es:[rdi],BYTE PTR ds:[rsi]
+      12f:	48 8d 54 24 10       	lea    rdx,[rsp+0x10]
+      134:	48 8d 74 24 0c       	lea    rsi,[rsp+0xc]
+      139:	48 8d 7c 24 08       	lea    rdi,[rsp+0x8]
+      13e:	48 8b 44 24 30       	mov    rax,QWORD PTR [rsp+0x30]
+      143:	ff d0                	call   rax
+      145:	48 89 c6             	mov    rsi,rax
+      148:	bf 03 00 00 00       	mov    edi,0x3
+      14d:	b8 0c 00 00 00       	mov    eax,0xc
+      152:	0f 05                	syscall 
+      154:	bf 05 00 00 00       	mov    edi,0x5
+      159:	b8 69 00 00 00       	mov    eax,0x69
+      15e:	0f 05                	syscall 
+      160:	48 8d 3d f9 02 00 00 	lea    rdi,[rip+0x2f9]        # 0x460
+      167:	48 8b 74 24 28       	mov    rsi,QWORD PTR [rsp+0x28]
+      16c:	48 89 7c 24 30       	mov    QWORD PTR [rsp+0x30],rdi
+      171:	b9 b0 00 00 00       	mov    ecx,0xb0
+      176:	f3 a4                	rep movs BYTE PTR es:[rdi],BYTE PTR ds:[rsi]
+      178:	48 8d 4c 24 14       	lea    rcx,[rsp+0x14]
+      17d:	48 8d 54 24 10       	lea    rdx,[rsp+0x10]
+      182:	48 8d 74 24 0c       	lea    rsi,[rsp+0xc]
+      187:	48 8d 7c 24 08       	lea    rdi,[rsp+0x8]
+      18c:	48 8b 44 24 30       	mov    rax,QWORD PTR [rsp+0x30]
+      191:	ff d0                	call   rax
+      193:	48 89 c7             	mov    rdi,rax
+      196:	b8 3c 00 00 00       	mov    eax,0x3c
+      19b:	0f 05                	syscall 
+
+
+
+
+***** The child wakes up *****
+
+At this point, the decrypted code shown above has been loaded into shared_mmap, the child is sleeping, and the parent is waiting on the child. When the child wakes up, it calls ptrace with a PTRACE_TRACEME request. After doing this, any time the child receives any kind of signal, its execution will stop, until the parent tells it to continue. In fact, the very next thing done by the child (after the ptrace) is to send itself a STOP signal. This stops the child and activates the waiting parent.
+
+
+
+***** The parent loop *****
+
+At this point, the parent enters into a loop, with pseudocode as follows:
+
+start loop
+    - tell the child to continue execution until the next time it either makes a syscall
+           or completes a syscall;
+    - wait until the child stops (after it finishes the next syscall);
+    
+    if the child has been terminated (such as after an exit syscall)
+        - break;
+    else
+        - use ptrace to figure out the code of the syscall made by the child;
+        - switch(syscall code) {
+              // do stuff
+          }
+end loop
+
+
+In other words, the child will step through the decrypted code block we discussed above, stopping right before and after every syscall instruction. During these stops, the parent performs some action based on the current syscall code.
+
+
+
+
+***** Program Flow *****
+
+Now that we see what the basic interaction between the parent and child is like, we can walk through it action by action. We begin when the child starts executing the decrypted function. 
+
+[child] syscall 1 (write) --- the child initiates a write syscall with parameters
+                              rdi = stdin, rsi = rsp + 8, rdx = 0x20
+
+[parent] The parent intercepts the syscall and uses a PTRACE_POKEUSER request to modify the
+         syscall 1 to syscall 0 (read)
+
+[child] The child carries out the syscall 0 (read), effectively reading at most 0x20 bytes
+        from stdin (your password) and storing the result in the buffer at address rsp+8.
+
+[parent] The parent sees the completion of the read syscall. Assuming no errors, it tells
+         the child to continue.
+
+[child] syscall 62 (kill) --- the child initiates a kill syscall with parameters
+                              rdi = 0x1337, rsi = 01666
+
+[parent] The parent intercepts the syscall and uses a PTRACE_POKEUSER request to modify the
+         syscall 62 to a syscall 68 (msgget)
+
+[child] The child carries out the syscall 68 (msgget). This should return a identifier for
+        a newly created message queue for the key 0x1337.
+
+[parent] The parent sees the completion of the msgget syscall. Assuming no errors, it tells
+         the child to continue
+
+[child] The child stores the returned message queue identifer in a local variable at
+        rsp + 0x28 and stores 1 in a local variable at rsi. 
+
+[child] syscall 61 (wait4) --- the child initiates a wait4 syscall with parameters
+                               rdi = message queue id, rsi = rsp, rdx=0x20
+
+[parent] The parent intercepts the syscall and uses a PTRACE_POKEUSER request to modify the
+         syscall 61 to a syscall 69 (msgsnd)
+
+[child] The child carries out the syscall (msgsnd). This adds a message to the previously
+        created queue consisting of the following data: 
+        message_type = 1, message_text = the supplied password (buffer length at most 0x20)
+        <NOTE> It appears that the value rcx = 0x800 is meant to be a fourth parameter
+               to the msgsend syscall. But for syscall assembly instructions, the fourth
+               parameter should be passed in r10 !
+
+[parent] The parent sees that the child has carried out the msgsend syscall. Assuming there
+         were no errors, the parent calls the handle_message function.
+
+
+
+***** The handle_message function *****
+
+The handle_message function is where we get our first batch of password processing. The parent starts by grabbing the child's message from the message queue. Recall, the child's message contains the buffer of length 0x20 holding the user's password, so now the parent has the user's password. The handle message works as follows:
+
+(1) Replace trailing newline character with a null terminator, if necessary.
+(2) Check if strlen(password) == 19. If not, the password fails.
+(3) Reverse the characters in the password.
+(4) Remove every 5th character from the password. So if the password after the reversing
+    was abcdefghijklmnopqrs, this step would transform the password into abcdfghiklmnpqrs.
+(5) Finally, add the modified password to the message queue via a message with the
+    following data: message_type = 2, message_text = modified password
+
+
+
+***** Program Flow (continued) *****
+
+[child] syscall 165 (mount) --- the child initiates a mount syscall with parameters
+                                rdi=msg queue id, rsi=rsp, rdx=0x20, ------, r8 = 0
+                                <NOTE> The fourth parameter is meant to be rcx=2, but
+                                       syscall assembly instructions should have fourth 
+                                       parameters passed in r10.
+
+[parent] The parent intercepts the mount syscall and uses a PTRACE_POKEUSER request to
+         modify the syscall 165 to a syscall 70 (msgrcv).
+
+[child] The child carries out the syscall (msgrcv). This loads the modified password buffer
+        into the memory at rsp+8.
+
+[parent] The parent sees the completion of the msgrcv syscall. Assuming no errors, it tells
+         the child to continue.
+
+[child] syscall 63 (uname) --- the child initiates a uname syscall with parameter rdi=5
+
+[parent] The parent intercepts the uname syscall and uses a PTRACE_POKEUSER request to
+         modify the syscall 63 to a syscall -2 (an invalid syscall number). It then takes
+         the value in the child's rdi register (5) and sleeps for that many seconds.
+
+[child] The child attempts to carry out the syscall -2, which fails.
+
+[parent] The parent tells the child to continue.
+
+[child] syscall 2 (open) --- the child initiates an open syscall with parameters
+                             rdi = 1337, rsi = 0x1000, rdx = 01777
+
+[parent] The parent intercepts the open syscall and uses a PTRACE_POKEUSER request to
+         modify the syscall 2 to a syscall 29 (shmget). 
+
+[child] The child carries out the shmget syscall, which creates a shared memory segment
+        associated to the key 1337.
+
+[parent] The parent sees the completion of the shmget syscall, and tells the child to
+         continue.
+
+[child] The child stores the identifier to the newly created shared memory segment in
+        rsp + 0x28.
+
+[child] syscall 42 (connect) --- the child initiates a connect syscall with parameters
+                                 rdi = shared memory id, rsi = rdx = 0
+
+[parent] The parent intercepts the connect syscall and uses a PTRACE_POKEUSER request to
+         modify the syscall 42 to a syscall 30 (shmat)
+
+[child] The child carries out the shmat syscall, attaching the newly created shared memory
+        segment to the process.
+
+[parent] The parent sees that the shmat has been carried out, and tells the child to 
+         continue.
+
+[child] The child stores the base address of the new shared memory segment in rsp+0x28.
+
+[child] syscall 12 (brk) --- the child initiates a brk syscall with parameters rdi=rsi=1.
+
+[parent] The parent intercepts the brk syscall. It does the following:
+         - Calls copy_check1_code(), which decrypts another code block and stores the
+           result in the new shared memory segment. We will discuss check1_code in more
+           detail later
+         - Use a PTRACE_POKEUSER request to modify the syscall 12 to a syscall -2 (invalid).
+
+[child] The child attempts to carry out the syscall -2, and fails.
+
+[parent] The parent tells the child to continue.
+
+[child] syscall 106 (setgid) --- the child initiates a setuid syscall with parameter rdi=5.
+
+[parent] The parent intercepts the setgid syscall and uses a PTRACE_POKEUSER request to
+         modify the syscall 106 with a syscall -2 (invalid). It then sleeps 5 seconds (the
+         value of the child's rdi register) before telling the child to continue.
+
+[child] The child attempts to carry out the syscall -2, and fails.
+
+[parent] The parent tells the child to continue.
+
+[child] The child executes check1_code with two parameters: rdi = the base of password,
+        rsi = password+8. The result is stored in rsi.
+
+[child] syscall 12 (brk) --- the child initiates a brk syscall with parameters rdi=2 and
+                             rsi = the result of check1_code
+
+[parent] The parent intercepts the brk syscall. It does the following:
+         - If the child's rsi is 0, the password fails
+         - Otherwise, copy_check2_code() is called, which decrypts another code block and
+           stores the result in the shared memory segment. We will discuss check2_code
+           in more detail later.
+         - Use a PTRACE_POKEUSER request to modify the syscall 12 to a syscall -2 (invalid).
+
+[child] The child attempts to carry out the syscall -2, and fails.
+
+[parent] The parent tells the child to continue.
+
+[child] syscall 105 (setuid) --- the child initiates a setuid syscall with parameter rdi=5.
+
+[parent] The parent intercepts the setuid syscall and uses a PTRACE_POKEUSER request to
+         modify the syscall 105 with a syscall -2 (invalid). In then sleeps for 5 seconds
+         (the value in the child's rdi register) before telling the child to continue.
+
+[child] The child attempts to carry out the syscall -2, and fails.
+
+[parent] The parent tells the child to continue.
+
+[child] The child executes check2_code with three parameters: rdi = password, 
+        rsi = password+4, rdx = password+8. The result is stored in rsi.
+
+[child] syscall 12 (brk) --- the child initiates a brk syscall with parameters rdi=3 and
+                             rsi = the result of check2_code
+
+[parent] The parent intercepts the brk syscall. It does the following:
+         - If the child's rsi is 0, the password fails
+         - Otherwise, copy_check3_code() is called, which decrypts another code block and
+           stores the result in the shared memory segment. We will discuss check3_code in 
+           more detail later.
+         - Use a PTRACE_POKEUSER request to modify the syscall 12 to a syscall -2 (invalid).
+
+[child] The child attempts to carry out the syscall -2, and fails.
+
+[parent] The parent ttells the child to continue.
+
+[child] syscall 105 (setuid) --- the child initiates a setuid syscall with parameter rdi=5.
+
+[parent] The parent intercepts the setuid syscall and uses a PTRACE_POKEUSER request to
+         modify the syscall 105 with a syscall -2 (invalid). In then sleeps for 5 seconds
+         (the value in the child's rdi register) before telling the child to continue.
+
+[child] The child attempts to carry out the syscall -2, and fails.
+
+[parent] The parent tells the child to continue.
+
+[child] The child executes check3_code with four parameters: rdi = password, 
+        rsi = password+4, rdx = password+8, rcx = password+12. The result is stored in rdi.
+
+[child] syscall 60 (exit) --- the child initiates an exit syscall with parameter rdi = the
+                              result of check3_code.
+
+[parent] The parent intercepts the exit syscall. It reads the child's rdi value. If it is 
+         0, the password fails; otherwise, the password succeeds.
+
+
+
+
+***** check1_code *****
+
+The copy_check1_code function is easy to reverse, showing us how to decrypt the check1_code block. The following python script does the trick:
+
+     with open('data_section', 'rb') as f:
+         check1_code = list(f.read()[0x1c0 : 0x1c0+0x6b])
+     key_byte = 0x77
+     for (i, b) in enumerate(check1_code):
+         check1_code[i] ^= key_byte
+         key_byte = b
+     with open('check1_code', 'wb') as f:
+         f.write(bytes(check1_code))
+
+We can now view check1_code with objdump:
+
+     > objdump -D -M intel,x86-64 -b binary -m i386 check1_code 
+     
+     check1_code:     file format binary
+     
+     
+     Disassembly of section .data:
+     
+     00000000 <.data>:
+        0:	55                   	push   rbp
+        1:	48 89 e5             	mov    rbp,rsp
+        4:	48 89 7d e8          	mov    QWORD PTR [rbp-0x18],rdi
+        8:	48 89 75 e0          	mov    QWORD PTR [rbp-0x20],rsi
+        c:	c6 45 fa 00          	mov    BYTE PTR [rbp-0x6],0x0
+       10:	c6 45 fb 01          	mov    BYTE PTR [rbp-0x5],0x1
+       14:	c7 45 fc 00 00 00 00 	mov    DWORD PTR [rbp-0x4],0x0
+       1b:	eb 39                	jmp    0x56
+       1d:	8b 45 fc             	mov    eax,DWORD PTR [rbp-0x4]
+       20:	48 63 d0             	movsxd rdx,eax
+       23:	48 8b 45 e8          	mov    rax,QWORD PTR [rbp-0x18]
+       27:	48 01 d0             	add    rax,rdx
+       2a:	0f b6 00             	movzx  eax,BYTE PTR [rax]
+       2d:	89 c2                	mov    edx,eax
+       2f:	0f b6 45 fa          	movzx  eax,BYTE PTR [rbp-0x6]
+       33:	01 d0                	add    eax,edx
+       35:	88 45 fa             	mov    BYTE PTR [rbp-0x6],al
+       38:	8b 45 fc             	mov    eax,DWORD PTR [rbp-0x4]
+       3b:	48 63 d0             	movsxd rdx,eax
+       3e:	48 8b 45 e0          	mov    rax,QWORD PTR [rbp-0x20]
+       42:	48 01 d0             	add    rax,rdx
+       45:	0f b6 00             	movzx  eax,BYTE PTR [rax]
+       48:	0f b6 55 fb          	movzx  edx,BYTE PTR [rbp-0x5]
+       4c:	0f af c2             	imul   eax,edx
+       4f:	88 45 fb             	mov    BYTE PTR [rbp-0x5],al
+       52:	83 45 fc 01          	add    DWORD PTR [rbp-0x4],0x1
+       56:	83 7d fc 03          	cmp    DWORD PTR [rbp-0x4],0x3
+       5a:	7e c1                	jle    0x1d
+       5c:	0f b6 45 fa          	movzx  eax,BYTE PTR [rbp-0x6]
+       60:	3a 45 fb             	cmp    al,BYTE PTR [rbp-0x5]
+       63:	0f 94 c0             	sete   al
+       66:	0f b6 c0             	movzx  eax,al
+       69:	5d                   	pop    rbp
+       6a:	c3                   	ret    
+
+
+Reversing this gives the following function:
+
+     int check1_code(uint8_t arg1[], uint8_t arg2[])
+     {
+         uint8_t sum = 0, product = 1;
+         for (int i = 0; i < 4; i++) {
+             sum += arg1[i];
+             product *= arg2[i];
+         }
+         if (sum == prod)
+             return 1;
+         else
+             return 0;
+     }
+
+
+
+***** check2_code *****
+
+The copy_check2_code function is easy to reverse, showing us how to decrypt the check2_code block. The following python script does the trick:
+
+     with open('data_section', 'rb') as f:
+         check2_code = f.read()[0x240 : 0x240+0x98]
+     key_byte = 0x77
+     decrypted_code = [0] * 0x98
+     for (i, b) in enumerate(check2_code):
+         decrypted_code[-i-1] = b ^ key_byte
+         key_byte = b
+     with open('check2_code', 'wb') as f:
+         f.write(bytes(decrypted_code))
+
+We can now view check2_code with objdump:
+
+     > objdump -D -M intel,x86-64 -b binary -m i386 check2_code
+     
+     check2_code:     file format binary
+     
+     
+     Disassembly of section .data:
+     
+     00000000 <.data>:
+        0:	55                   	push   rbp
+        1:	48 89 e5             	mov    rbp,rsp
+        4:	48 89 7d e8          	mov    QWORD PTR [rbp-0x18],rdi
+        8:	48 89 75 e0          	mov    QWORD PTR [rbp-0x20],rsi
+        c:	48 89 55 d8          	mov    QWORD PTR [rbp-0x28],rdx
+       10:	c7 45 fc 00 00 00 00 	mov    DWORD PTR [rbp-0x4],0x0
+       17:	eb 72                	jmp    0x8b
+       19:	8b 45 fc             	mov    eax,DWORD PTR [rbp-0x4]
+       1c:	48 63 d0             	movsxd rdx,eax
+       1f:	48 8b 45 e8          	mov    rax,QWORD PTR [rbp-0x18]
+       23:	48 01 d0             	add    rax,rdx
+       26:	0f b6 00             	movzx  eax,BYTE PTR [rax]
+       29:	89 c1                	mov    ecx,eax
+       2b:	8b 45 fc             	mov    eax,DWORD PTR [rbp-0x4]
+       2e:	48 63 d0             	movsxd rdx,eax
+       31:	48 8b 45 d8          	mov    rax,QWORD PTR [rbp-0x28]
+       35:	48 01 d0             	add    rax,rdx
+       38:	0f b6 00             	movzx  eax,BYTE PTR [rax]
+       3b:	89 c2                	mov    edx,eax
+       3d:	89 c8                	mov    eax,ecx
+       3f:	0f af c2             	imul   eax,edx
+       42:	89 c1                	mov    ecx,eax
+       44:	8b 45 fc             	mov    eax,DWORD PTR [rbp-0x4]
+       47:	48 63 d0             	movsxd rdx,eax
+       4a:	48 8b 45 e0          	mov    rax,QWORD PTR [rbp-0x20]
+       4e:	48 01 d0             	add    rax,rdx
+       51:	0f b6 00             	movzx  eax,BYTE PTR [rax]
+       54:	89 c6                	mov    esi,eax
+       56:	8b 45 fc             	mov    eax,DWORD PTR [rbp-0x4]
+       59:	8d 50 01             	lea    edx,[rax+0x1]
+       5c:	89 d0                	mov    eax,edx
+       5e:	c1 f8 1f             	sar    eax,0x1f
+       61:	c1 e8 1e             	shr    eax,0x1e
+       64:	01 c2                	add    edx,eax
+       66:	83 e2 03             	and    edx,0x3
+       69:	29 c2                	sub    edx,eax
+       6b:	89 d0                	mov    eax,edx
+       6d:	48 63 d0             	movsxd rdx,eax
+       70:	48 8b 45 e0          	mov    rax,QWORD PTR [rbp-0x20]
+       74:	48 01 d0             	add    rax,rdx
+       77:	0f b6 00             	movzx  eax,BYTE PTR [rax]
+       7a:	01 f0                	add    eax,esi
+       7c:	38 c1                	cmp    cl,al
+       7e:	74 07                	je     0x87
+       80:	b8 00 00 00 00       	mov    eax,0x0
+       85:	eb 0f                	jmp    0x96
+       87:	83 45 fc 01          	add    DWORD PTR [rbp-0x4],0x1
+       8b:	83 7d fc 03          	cmp    DWORD PTR [rbp-0x4],0x3
+       8f:	7e 88                	jle    0x19
+       91:	b8 01 00 00 00       	mov    eax,0x1
+       96:	5d                   	pop    rbp
+       97:	c3                   	ret    
+
+
+Reversing this gives the following function:
+
+     int check2_code(uint8_t arg1[], uint8_t arg2[], uint8_t arg3[])
+     {
+         for (int i = 0; i < 4; i++)
+             if (arg2[(i+1) & 3] + arg2[i] != arg1[i] * arg3[i])
+                 return 0;
+         return 1;
+     }
+
+
+
+***** check3_code *****
+
+
+The copy_check3_code function is easy to reverse, showing us how to decrypt the check3_code block. The following python script does the trick:
+
+     with open('data_section', 'rb') as f:
+         check3_code = f.read()[0x2e0 : 0x2e0+0xad]
+     key_byte = 0x77
+     xor_key = 'key'
+     decrypted_code = [0] * 0xad
+     for (i, b) in enumerate(check3_code):
+         decrypted_code[i] = b ^ key_byte ^ xor_key[i % 3]
+         key_byte = b
+     with open('check3_code', 'wb') as f:
+         f.write(bytes(decrypted_code))
+
+We can now view check3_code with objdump:
+
+     > objdump -D -M intel,x86-64 -b binary -m i386 check3_code
+     
+     check3_code:     file format binary
+     
+     
+     Disassembly of section .data:
+     
+     00000000 <.data>:
+        0:	55                   	push   rbp
+        1:	48 89 e5             	mov    rbp,rsp
+        4:	48 89 7d e8          	mov    QWORD PTR [rbp-0x18],rdi
+        8:	48 89 75 e0          	mov    QWORD PTR [rbp-0x20],rsi
+        c:	48 89 55 d8          	mov    QWORD PTR [rbp-0x28],rdx
+       10:	48 89 4d d0          	mov    QWORD PTR [rbp-0x30],rcx
+       14:	c7 45 fc 00 00 00 00 	mov    DWORD PTR [rbp-0x4],0x0
+       1b:	eb 7f                	jmp    0x9c
+       1d:	8b 45 fc             	mov    eax,DWORD PTR [rbp-0x4]
+       20:	48 63 d0             	movsxd rdx,eax
+       23:	48 8b 45 e8          	mov    rax,QWORD PTR [rbp-0x18]
+       27:	48 01 d0             	add    rax,rdx
+       2a:	0f b6 08             	movzx  ecx,BYTE PTR [rax]
+       2d:	b8 03 00 00 00       	mov    eax,0x3
+       32:	2b 45 fc             	sub    eax,DWORD PTR [rbp-0x4]
+       35:	48 63 d0             	movsxd rdx,eax
+       38:	48 8b 45 e0          	mov    rax,QWORD PTR [rbp-0x20]
+       3c:	48 01 d0             	add    rax,rdx
+       3f:	0f b6 00             	movzx  eax,BYTE PTR [rax]
+       42:	89 ce                	mov    esi,ecx
+       44:	31 c6                	xor    esi,eax
+       46:	8b 45 fc             	mov    eax,DWORD PTR [rbp-0x4]
+       49:	8d 50 02             	lea    edx,[rax+0x2]
+       4c:	89 d0                	mov    eax,edx
+       4e:	c1 f8 1f             	sar    eax,0x1f
+       51:	c1 e8 1e             	shr    eax,0x1e
+       54:	01 c2                	add    edx,eax
+       56:	83 e2 03             	and    edx,0x3
+       59:	29 c2                	sub    edx,eax
+       5b:	89 d0                	mov    eax,edx
+       5d:	48 63 d0             	movsxd rdx,eax
+       60:	48 8b 45 d8          	mov    rax,QWORD PTR [rbp-0x28]
+       64:	48 01 d0             	add    rax,rdx
+       67:	0f b6 08             	movzx  ecx,BYTE PTR [rax]
+       6a:	b8 05 00 00 00       	mov    eax,0x5
+       6f:	2b 45 fc             	sub    eax,DWORD PTR [rbp-0x4]
+       72:	99                   	cdq    
+       73:	c1 ea 1e             	shr    edx,0x1e
+       76:	01 d0                	add    eax,edx
+       78:	83 e0 03             	and    eax,0x3
+       7b:	29 d0                	sub    eax,edx
+       7d:	48 63 d0             	movsxd rdx,eax
+       80:	48 8b 45 d0          	mov    rax,QWORD PTR [rbp-0x30]
+       84:	48 01 d0             	add    rax,rdx
+       87:	0f b6 00             	movzx  eax,BYTE PTR [rax]
+       8a:	31 c8                	xor    eax,ecx
+       8c:	40 38 c6             	cmp    sil,al
+       8f:	74 07                	je     0x98
+       91:	b8 00 00 00 00       	mov    eax,0x0
+       96:	eb 13                	jmp    0xab
+       98:	83 45 fc 01          	add    DWORD PTR [rbp-0x4],0x1
+       9c:	83 7d fc 03          	cmp    DWORD PTR [rbp-0x4],0x3
+       a0:	0f 8e 77 ff ff ff    	jle    0x1d
+       a6:	b8 01 00 00 00       	mov    eax,0x1
+       ab:	5d                   	pop    rbp
+       ac:	c3                   	ret    
+
+
+Reversing this gives the function:
+
+     int check3_code(uint8_t arg1[], uint8_t arg2[], uint8_t arg3[], uint8_t arg4[])
+     {
+         for (int i = 0; i < 4; i++)
+             if (arg1[i] ^ arg2[3-i] != arg3[(i+2) & 3] ^ arg4[(5-i) & 3])
+                 return 0;
+         return 1;
+     }
+
+
+
+
+***** Summing up *****
+
+Password processing undergoes the following transformations/checks.
+
+1) The supplied password should have length 19.
+2) The password is first reversed.
+3) The result is transformed by omitting every fifth character.
+4) The transformed password must satisfy check1_code(password, password+8) == 1
+5) The transformed password must satisfy check2_code(password, password+4, password+8) == 1
+6) The transformed password must satisfy check3_code(password, password+4, password+8, password+16) == 1
+
+
+
+============
+  SOLUTION
+============
+
+While a little tricky, it's possible to cook up solutions by hand. One such solution is:
+
+BBBBxRvRvxffffxvRvR
+
+Here the x's can be replaced by any non-null characters, since these are simply ignored. 
+
+<NOTE> Don't forget to have a file named 'flag' in the current directory to have its contents printed to stdout. Not having such a file will result in a segfault.
+
+<NOTE> Due to an unfortunate issue with how the program tries to trim trailing newline characters, the password must be entered with an explicit null terminator after the last character:
+
+     > echo -e 'BBBBxRvRvxffffxvRvR\0' | ./undebuggable
+     
+     
+     ________________________    __________                        .__
+     \_____  \__    ___/  _  \   \______   \_______   ____   _____ |__|__ __  _____
+      /   |   \|    | /  /_\  \   |     ___/\_  __ \_/ __ \ /     \|  |  |  \/     \
+     /    |    \    |/    |    \  |    |     |  | \/\  ___/|  Y Y  \  |  |  /  Y Y  \
+     \_______  /____|\____|__  /  |____|     |__|    \___  >__|_|  /__|____/|__|_|  /
+             \/              \/                          \/      \/               \/
+     
+     
+     Enter license to prove you are premium OTA member: Checking license............
+     LOOK AT MY FLAG. LOOK AT IT. LOOK. AT. IT. BOOM. FLAGGED.

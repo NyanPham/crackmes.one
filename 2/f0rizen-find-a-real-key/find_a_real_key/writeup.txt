@@ -1,0 +1,155 @@
+f0rizen's find a real key
+
+Platform: Unix/Linux etc.
+Arch: x86-64
+Language: C/C++
+Difficulty: 2.0
+Quality: 4.0
+
+Tools: Ghidra (for disassembly), readelf, file, strings
+
+Summary:
+
+  Pretty vanilla ELF binary. No obfuscation or crazy code to throw the analyst
+off course. I think it is a level 1 if the analyst uses a debugger since
+the string will be compared character by character as part of the validation
+algorithm. I think it is a very good candidate for praciticing static
+analysis and actually reverse engineering the code from the disassembly. The
+writeup will go that route.
+
+Writeup:
+
+  Running strings on the file will pick up the string "sup3r_s3cr3t_k3y_1337"
+which is not the end of the challenge but will be used in the algorithm. As 
+this is an ELF, main is the function passed in RDI to __libc_start_main.
+
+  Jumping to main, we see it takes command line arguments. The argc argument
+is tested to see if it is equal to 1 (no command line arguments passed). If it
+is equal to one a usage message is printed and main returns 1.  The program
+does not check for strictly two arguments but it only uses the one argument.
+
+  The length of the first argument is checked to be 0x15 or decimal 21. If it
+is not, a "Wrong flag" message is printed and main returns 1.
+
+  The string discovered from running strings, "sup3r_s3cr3t_k3y_1337", has a 
+pointer assigned to its address.
+
+    11dd:	48 8d 05 41 0e 00 00 	lea    rax,[rip+0xe41] # 0x2025
+    11e4:	48 89 85 78 ff ff ff 	mov    QWORD PTR [rbp-0x88],rax
+
+
+  A loop is entered that takes every character in the hardcoded string and
+subtracts 0x22 or decimal 34 from each character and places it in a new buffer
+on the stack at RBP - 0x20.
+
+    11eb:	c7 85 70 ff ff ff 00 	mov    DWORD PTR [rbp-0x90],0x0
+    11f2:	00 00 00 
+    11f5:	eb 2e                	jmp    1225 <main+0xc0>
+    11f7:	8b 85 70 ff ff ff    	mov    eax,DWORD PTR [rbp-0x90]
+    11fd:	48 63 d0             	movsxd rdx,eax
+    1200:	48 8b 85 78 ff ff ff 	mov    rax,QWORD PTR [rbp-0x88]
+    1207:	48 01 d0             	add    rax,rdx
+    120a:	0f b6 00             	movzx  eax,BYTE PTR [rax]
+    120d:	83 e8 22             	sub    eax,0x22
+    1210:	89 c2                	mov    edx,eax
+    1212:	8b 85 70 ff ff ff    	mov    eax,DWORD PTR [rbp-0x90]
+    1218:	48 98                	cdqe   
+    121a:	88 54 05 e0          	mov    BYTE PTR [rbp+rax*1-0x20],dl
+    121e:	83 85 70 ff ff ff 01 	add    DWORD PTR [rbp-0x90],0x1
+    1225:	83 bd 70 ff ff ff 14 	cmp    DWORD PTR [rbp-0x90],0x14
+    122c:	7e c9                	jle    11f7 <main+0x92>
+
+  The disassembly above roughly translates to the C source seen below where
+s1 is the buffer on the stack at RBP - 0x20 and the hardcoded string's pointer
+is s.
+
+    unsigned i = 0;
+
+    while (i < 0x15) {
+        s1[i] = s[i] - 0x22; // or s[i] - 34;
+        i += 1;
+     }
+
+  An unsigned array of 0x15 elements is created on the stack starting at
+RBP - 0x80.
+
+    122e:	c7 45 80 37 00 00 00 	mov    DWORD PTR [rbp-0x80],0x37
+    1235:	c7 45 84 3f 00 00 00 	mov    DWORD PTR [rbp-0x7c],0x3f
+    123c:	c7 45 88 2f 00 00 00 	mov    DWORD PTR [rbp-0x78],0x2f
+    1243:	c7 45 8c 76 00 00 00 	mov    DWORD PTR [rbp-0x74],0x76
+    124a:	c7 45 90 2b 00 00 00 	mov    DWORD PTR [rbp-0x70],0x2b
+    1251:	c7 45 94 62 00 00 00 	mov    DWORD PTR [rbp-0x6c],0x62
+    1258:	c7 45 98 28 00 00 00 	mov    DWORD PTR [rbp-0x68],0x28
+    125f:	c7 45 9c 21 00 00 00 	mov    DWORD PTR [rbp-0x64],0x21
+    1266:	c7 45 a0 34 00 00 00 	mov    DWORD PTR [rbp-0x60],0x34
+    126d:	c7 45 a4 0f 00 00 00 	mov    DWORD PTR [rbp-0x5c],0xf
+    1274:	c7 45 a8 77 00 00 00 	mov    DWORD PTR [rbp-0x58],0x77
+    127b:	c7 45 ac 62 00 00 00 	mov    DWORD PTR [rbp-0x54],0x62
+    1282:	c7 45 b0 48 00 00 00 	mov    DWORD PTR [rbp-0x50],0x48
+    1289:	c7 45 b4 27 00 00 00 	mov    DWORD PTR [rbp-0x4c],0x27
+    1290:	c7 45 b8 75 00 00 00 	mov    DWORD PTR [rbp-0x48],0x75
+    1297:	c7 45 bc 08 00 00 00 	mov    DWORD PTR [rbp-0x44],0x8
+    129e:	c7 45 c0 56 00 00 00 	mov    DWORD PTR [rbp-0x40],0x56
+    12a5:	c7 45 c4 6a 00 00 00 	mov    DWORD PTR [rbp-0x3c],0x6a
+    12ac:	c7 45 c8 68 00 00 00 	mov    DWORD PTR [rbp-0x38],0x68
+    12b3:	c7 45 cc 4e 00 00 00 	mov    DWORD PTR [rbp-0x34],0x4e
+    12ba:	c7 45 d0 68 00 00 00 	mov    DWORD PTR [rbp-0x30],0x68
+
+  A loop is then entered. This loop is the validation algorithm/loop. It will
+determine if the command line argument is correct based on the algorithm used
+in this loop. The string generated from the previous loop has each character
+xor'd with the respective character at the same index in the command line
+argument. That value (4 bytes from a zero extended byte) is checked to see if
+it is equal to the value at the same index in the array on the stack from above.
+
+    12c1:	c7 85 74 ff ff ff 00 	mov    DWORD PTR [rbp-0x8c],0x0
+    12c8:	00 00 00 
+    12cb:	eb 58                	jmp    1325 <main+0x1c0>
+    12cd:	48 8b 85 60 ff ff ff 	mov    rax,QWORD PTR [rbp-0xa0]
+    12d4:	48 83 c0 08          	add    rax,0x8
+    12d8:	48 8b 10             	mov    rdx,QWORD PTR [rax]
+    12db:	8b 85 74 ff ff ff    	mov    eax,DWORD PTR [rbp-0x8c]
+    12e1:	48 98                	cdqe   
+    12e3:	48 01 d0             	add    rax,rdx
+    12e6:	0f b6 10             	movzx  edx,BYTE PTR [rax]
+    12e9:	8b 85 74 ff ff ff    	mov    eax,DWORD PTR [rbp-0x8c]
+    12ef:	48 98                	cdqe   
+    12f1:	0f b6 44 05 e0       	movzx  eax,BYTE PTR [rbp+rax*1-0x20]
+    12f6:	31 d0                	xor    eax,edx
+    12f8:	0f be d0             	movsx  edx,al
+    12fb:	8b 85 74 ff ff ff    	mov    eax,DWORD PTR [rbp-0x8c]
+    1301:	48 98                	cdqe   
+    1303:	8b 44 85 80          	mov    eax,DWORD PTR [rbp+rax*4-0x80]
+    1307:	39 c2                	cmp    edx,eax
+    1309:	74 13                	je     131e <main+0x1b9>
+    130b:	48 8d 3d 08 0d 00 00 	lea    rdi,[rip+0xd08]
+    1312:	e8 19 fd ff ff       	call   1030 <puts@plt>
+    1317:	b8 01 00 00 00       	mov    eax,0x1
+    131c:	eb 37                	jmp    1355 <main+0x1f0>
+    131e:	83 85 74 ff ff ff 01 	add    DWORD PTR [rbp-0x8c],0x1
+    1325:	83 bd 74 ff ff ff 14 	cmp    DWORD PTR [rbp-0x8c],0x14
+    132c:	7e 9f                	jle    12cd <main+0x168>
+
+  The C equivalent of the disassembly above is seen below. The string generated
+is s which is RBP - 0x20 and the array, a, of (unsigned?) integers is
+RBP - 0x80.
+
+    unsigned i = 0;
+
+    while (i < 0x15) {
+        if ((s[i] ^ argv[1][i]) != a[i]) {
+            puts("Wrong flag");
+            return 1;
+        }
+
+        i += 1;
+    }
+
+  If the loop goes through all indices then the "You found a flag..." message
+is printed to the terminal. This completes the program. Attached is a C source
+file with code to generate the flag. When run it will generate the flag,
+
+	"flag{_y0u_f0und_key_}"
+
+, which is the flag to get the "You found a flag..." message.
+

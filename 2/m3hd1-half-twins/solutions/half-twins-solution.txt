@@ -1,0 +1,73 @@
+ok, that was a nice crackme, its easy but i cannot explain how i enjoy it. thank you..
+
+The binary have just the main function,and in it all logical operations to create this funny crackme...
+
+this is easy to solve if u use a decompiler, but is nice to explain in assembly mode too. so, lets quick in the point
+
+1 - args numbers = 3 
+	./A B C 
+
+      cmp     dword [var_44h], 3
+      je      0x118c
+
+2 - B and C length > 7
+	B and C must have 7 caracters 
+
+	0x000011b0      cmp     rax, 6
+	0x000011b4      ja      0x11d8
+
+	0x000011e4      cmp     rax, 6
+	0x000011e8      ja      0x120c
+
+3 - B and C must be equal length
+	0x0000120c      mov     rax, qword [var_20h]
+	0x00001210      mov     rdi, rax  
+	0x00001213      call    sym.imp.strlen
+	0x00001218      mov     rbx, rax
+	0x0000121b      mov     rax, qword [var_18h]
+	0x0000121f      mov     rdi, rax  
+	0x00001222      call    sym.imp.strlen 
+	0x00001227      cmp     rbx, rax
+	0x0000122a      je      0x124e
+
+4 - (STRLEN(B) AND 1) = 0 ; so 00000000
+	0x00001255      call    sym.imp.strlen 
+	0x0000125a      and     eax, 1
+	0x0000125d      test    rax, rax
+	0x00001260      je      0x1284
+
+5 - WHILE(COUNT(0) < STRLEN(B) >> 1) ; 4
+	IF B[COUNT] != C[COUNT]
+		FAIL
+	COUNT++;
+	The first quarters characters must be equal !
+
+	0x00001284      mov     rax, qword [var_20h]
+	0x00001288      mov     rdi, rax   ; const char *s
+	0x0000128b      call    sym.imp.strlen ; size_t strlen(const char *s)
+	0x00001290      shr     rax, 1
+	0x00001293      mov     dword [var_30h], eax
+	0x00001296      mov     dword [var_34h], 0
+	0x0000129d      jmp     0x12e6
+	...
+	0x000012e2      add     dword [var_34h], 1
+	0x000012e6      mov     eax, dword [var_34h]
+	0x000012e9      cmp     eax, dword [var_30h]
+	0x000012ec      jl      0x129f
+
+5 - WHILE(COUNT < STRLEN(B)); 4, 8
+	IF B[COUNT] == C[COUNT]
+		FAIL
+	COUNT++
+	The last quarters characters must be diferent 
+
+	0x00001315      mov     rax, qword [var_18h]
+	0x00001319      add     rax, rcx
+	0x0000131c      movzx   eax, byte [rax]
+	0x0000131f      cmp     dl, al
+	0x00001321      jne     0x1342
+
+6 - Abby & Gabby: yaayy!! nice job! :D
+
+
+

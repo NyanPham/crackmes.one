@@ -1,0 +1,83 @@
+PASSCODE - 46
+
+
+Disassembling the binary and checking out the main function this is what is found, all that really happens here that is of note is the call to 'scanf' to read in the user input.
+There is a "%d" format string argument provided. There is a constant floating point value that is loaded into the 'xmm0' register, given this is a floating point register it is easy to
+take the constant value and view it in its floating point representation. The resulting value is 3.564. The 'xmm0' register is also set to 0 via a 'pxor' instruction then the value is
+stored and will be used as a variable (similar to a counter) in the following section of code. The loop will run as long as the counter variable is below the value calculated
+at 0x00000758, this loop condition variable is (input + 3.564).
+
+main:
+00000720  push    rbp {__saved_rbp}
+00000721  mov     rbp, rsp {__saved_rbp}
+00000724  sub     rsp, 0x20
+00000728  movss   xmm0, dword [rel data_8b4]      ; const float value {0x40641893}
+00000730  movss   dword [rbp-0xc], xmm0
+00000735  lea     rax, [rbp-0x14]        ; start of buffer
+00000739  mov     rsi, rax
+0000073c  lea     rdi, [rel data_894]             ; "%d" format string
+00000743  mov     eax, 0x0
+00000748  call    __isoc99_scanf
+
+0000074d  mov     eax, dword [rbp-0x14]
+00000750  pxor    xmm0, xmm0
+
+00000754  cvtsi2ss xmm0, eax
+00000758  addss   xmm0, dword [rbp-0xc] ; Loop condition value, 3.564
+0000075d  cvttss2si eax, xmm0
+00000761  mov     dword [rbp-0x10], eax
+00000764  pxor    xmm0, xmm0                      ; loop_counter
+00000768  movss   dword [rbp-0x8], xmm0
+0000076d  jmp     0x7a1
+
+
+The next section of code only corresponds to the loop check, in psuedocode followed by the assembly:
+
+while(counter < (input + 3.564))
+
+000007a1  pxor    xmm0, xmm0
+000007a5  cvtsi2ss xmm0, dword [rbp-0x10]
+000007aa  ucomiss xmm0, dword [rbp-0x8]
+000007ae  ja      0x76f
+
+The body of the loop just looks like this:
+
+0000076f  pxor    xmm0, xmm0  {0x0}
+00000773  cvtsi2ss xmm0, dword [rbp-0x10]
+00000778  addss   xmm0, dword [rbp-0x8]
+0000077d  movss   xmm1, dword [rbp-0x4]
+00000782  addss   xmm0, xmm1
+00000786  movss   dword [rbp-0x4], xmm0
+0000078b  movss   xmm1, dword [rbp-0x8]
+00000790  movss   xmm0, dword [rel _0.8]
+00000798  addss   xmm0, xmm1
+0000079c  movss   dword [rbp-0x8], xmm0
+
+At this point I used Ghidra to decompile the loop, this left my with a result of:
+
+  while (counter_var < (float)MAX_LOOP_VAL) {
+    pass_key = (float)MAX_LOOP_VAL + counter_var + pass_key;
+    counter_var = counter_var + 0.80000001;
+  }
+
+So all that will happen here is that approximately 0.8 is added to the loop control variable on each iteration until the value is greater than the sum of the user input and 3.564 the next section of code will handily print the counter_var value, then there is a final check that the counter_var is equal to 4550.79980469.
+Given how floating point numbers are handled there should be a range of values that can be input as a winning password:
+
+000007b0  cvtss2sd xmm0, dword [rbp-0x4]
+000007b5  lea     rdi, [rel data_897]
+000007bc  mov     eax, 0x1
+000007c1  call    printf
+000007c6  movss   xmm0, dword [rbp-0x4]
+000007cb  ucomiss xmm0, dword [rel data_8bc]
+000007d2  jpe     0x7f5
+
+Check:
+
+000007d4  movss   xmm0, dword [rbp-0x4]
+000007d9  ucomiss xmm0, dword [rel data_8bc]
+000007e0  jne     0x7f5
+
+At this point I studied the algorithm for a while but decide that as the program prints the result of the loop it would be much easier input a low value followed by a high value,
+narrowing down the range the passcode will fall in.
+After running a few integer values I landed on 46 and continued testing to see how large the range is, it seemed that the value could be floating point value that has 46 as the integer
+part. Obviously I didn't continue trying values using more and more decimal places so this range may not be exact.

@@ -1,0 +1,4 @@
+Answer:  "bd23cf3f56baa86bc"
+
+This one was a little dissapointing to be honest, to solve it I check through the binary and saw that it builds a string on the heap then runs a string compare.
+I quickly ran 'ltrace' on the binary and was shown the password in the call to 'strcmp'.

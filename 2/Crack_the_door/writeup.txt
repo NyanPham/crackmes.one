@@ -1,0 +1,31 @@
+Looking at the first block of code (before the first loop), we see the strings that represent the printed keyboard and prompt being assigned. The prompt will then be printed to the user.
+Once these assignments and the printing of the prompt have taken place the program will begin executing its first loop. This loop then prints the previously assigned keyboard to the screen,
+suggesting that it was stored inside a data structure.
+We then drop into a block of code where we are prompted for a username. This username is then passed to a call to 'strlen' and it's return value is compared to 0xc (12) for the next
+conditional jump instruction, so the only check on our password is that it is only 12 characters long. For the ease of debuging I patched the 'strlen' call to always return  12.
+The username string does come up in the next loop character by character but it's value is soon written over before any operations are performed on it or any copies are made.
+
+After being prompted for the password its length is checked and if it is not equal to 12 we will fail with a message saying 'BAD LENGTH', after this we begin the execution of the 3'rd and
+last loop of the binary, (which has a lot of pointless code as obfuscation), we can see that  the EDX register is used to store and commit pointless values to memory before being overwritten.
+This last loop will iterate 6 times, there is also some array indexing involed. The values of this array are not evident from static analysis but upon running the program through a debugger,
+we can view these values by reading the value from EAX on each iteration just after the value is read from memory.
+Doing this I got the values: { 0x54, 0x45, 0x49, 0x41, 0x45, 0x53 }. These values remain the same no matter what the user inputs.
+
+We can see a function that is called at the end of this loop called 'check()', this function takes a boolean argument. If true, we get the win message, if false we get the fail message.
+If we look just before this the argument value is assigned dependent of the check of a single variable (whether it's equal to 12 or not), we need to fail this check (as it is a JNE).
+If we do our boolean value is assigned 1 if not 0.
+Tracing the variable that must be 12 back we can see that it is only written to at one occurance in the loop, this is also dependent on us passing another check as the value is incremented
+by two each iteration of the loop only if we take a particular branch.
+For us to take this branch we must pass the check where a particular byte of our provided password is compared to a value in EDX that is calculated on the fly. This means that we could find
+the needed password with a debugger whilst providing a recognisable string for our password then comparing values of each iteration of the loop at the 'cmp' instruction.
+This unfortunately doesn't work as easily as we'd like as there is a prior check that must be passed to even reach this branch.
+
+This branch seems to be controlled by a check on the loop counter being equal to our value that must end as 12, this seems to cause our branch to be taken every other iteration of the loop.
+After a little debugging it seems that the loop checks 2 characters of the password per iteration, we can read the ascii values for the password if we check the 'AL' and 'DL' registers
+before each conditional jump branch (there are 2 that we must read the register values) as we must pass these checks each iteration for the variable that is checked before the 'check()'
+function to be incremented to 12.
+
+If we iterate through the loop like this we can leak the password, doing this I got: p9G@K9C@G9m_
+
+Username: anything as long as it's 11 characters.
+Password: p9G@K9C@G9m_

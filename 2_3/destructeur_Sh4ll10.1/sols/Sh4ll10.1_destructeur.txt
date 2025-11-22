@@ -1,0 +1,209 @@
+A summary the main() function is as follows (key annotations are prefixed by C-style comments "//"): 
+
+str[abi:cxx11][0] == falsePassword[abi:cxx11][0] implies don't take branch(eax = 1)
+str[abi:cxx11][1] == falsePassword[abi:cxx11][5] implies don't take branch(eax = 1)
+str[abi:cxx11][2] == falsePassword[abi:cxx11][8] implies don't take branch(eax = 1)
+str[abi:cxx11][3] == falsePassword[abi:cxx11][9] implies don't take branch(eax = 1)
+
+Using gdb at appropriate breakpoints suggests "1a4f" allows us to reach the following code:
+
+0x004011cf      lea     rax, [var_40h]
+0x004011d3      mov     esi, str.Good_password ; 0x4017d1
+0x004011d8      mov     rdi, rax
+0x004011db      call    std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::operator=(char const*) ; sym.imp.std::__cxx11::basic_string_char__std::char_traits_char___std::allocator_char___::operator__char_const
+0x004011e0      mov     ebx, 1
+0x004011e5      jmp     0x40120a
+...
+0x0040120a 		lea     rax, [var_60h]
+0x0040120e      mov     rdi, rax
+0x00401211      call    std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::~basic_string() ; sym.imp.std::__cxx11::basic_string_char__std::char_traits_char___std::allocator_char___::_basic_string
+0x00401216      lea     rax, [var_40h]
+0x0040121a      mov     rdi, rax
+0x0040121d      call    std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::~basic_string() ; sym.imp.std::__cxx11::basic_string_char__std::char_traits_char___std::allocator_char___::_basic_string
+0x00401222      mov     eax, ebx
+0x00401224      jmp     0x401277
+...
+0x00401277      add     rsp, 0x88
+0x0040127e      pop     rbx
+0x0040127f      pop     rbp
+0x00401280      ret				
+
+which initially is weird since (1) falsePassword's value is not initialized in main() itself and (2) there is no output of "Good Password" in main() itself so there must be something else. a quick search for strings turns up "1d47faf54f84dc393a4a015a8f190e36" at 0x4017e0 (which is md5sum for "nobug", the false password). It also lets us understand that "1a4f" reaching code at 0x4011d3 (for "Good password") arises from here. Note also that the return value of main() is 1.
+
+Further looking reveals that it is initialized in sym._static_initialization_and_destruction_0_int_int as follows:
+
+0x0040153b      mov     rdx, rax
+0x0040153e      mov     esi, str.1d47faf54f84dc393a4a015a8f190e36 ; 0x4017e0
+0x00401543      mov     edi, falsePassword[abi:cxx11] ; 0x602320
+0x00401548      call    std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::basic_string(char const*, std::allocator<char> const&) ; sym.imp.std::__cxx11::basic_string_char__std::char_traits_char___std::allocator_char___::basic_string_char_const___std::allocator_char__const
+...
+0x0040158b      call    _static_initialization_and_destruction() ; sym._static_initialization_and_destruction
+0x00401590      mov     dword [s], eax ; 0x602368
+0x00401596      jmp     0x4015b2
+...
+0x004015b2      add     rsp, 0x28
+0x004015b6      pop     rbx
+0x004015b7      pop     rbp
+0x004015b8      ret
+
+This implies that there (possibly) is a static library (or equivalent) being loaded before main() is executed, and unloaded after main() is executed, encapsulated in the sym._static_initialization_and_destruction procedure. We first face the following nested loop (annotated personally):
+
+// Initialization
+0x004012a5      mov     dword [var_38h], eax
+0x004012a8      mov     dword [var_14h], 5
+0x004012af      mov     dword [var_18h], 6
+0x004012b6      mov     byte [var_19h], 1
+
+// Comparison (ne --> goes into loop body)
+
+// LOOP #1
+0x004012ba      cmp     byte [var_19h], 0
+0x004012be      je      0x4012fa
+
+// LOOP #2
+0x004012c0      mov     dword [var_20h], 0
+0x004012c7      cmp     dword [var_20h], 0x174d		; var_20 <= 0x174d = 5965
+0x004012ce      ja      0x4012e0					; GOES TO INNER LOOP #3
+
+// NOT GOING TO LOOP #2 (branch fail)
+0x004012d0      mov     eax, dword [var_20h]	;  
+0x004012d3      add     dword [var_14h], eax	; 5 + (0 + 1 + 2 + ... + 5965) = 5 + 17,787,630 = 0x10F6AF3 
+0x004012d6      xor     dword [var_18h], 5		; 6 (110) ^ 5 (101) = (011), 3 ^ 5 = 110 .. alternate between 6 and 3 
+0x004012da      add     dword [var_20h], 1		; increment var_20h
+0x004012de      jmp     0x4012c7				; repeat LOOP #2
+
+// LOOP #3: (set var19_h = 0)
+0x004012e0      mov     dword [var_24h], 0x15d0	; var_24h = 0x15d0 = 5584 is counter
+0x004012e7      cmp     dword [var_24h], 0x15d5	; var_24h > (0x15d5 = 5589)
+0x004012ee      ja      0x4012ba				; exit
+
+0x004012f0      mov     byte [var_19h], 0		; var19_h = 0
+0x004012f4      add     dword [var_24h], 1		; var_24h++
+0x004012f8      jmp     0x4012e7				; repeat LOOP #3
+
+At the end of the 3 loops, we have the following:
+var_14h = 0x10f6af3
+var_18h = 6 (5966 iterations total = even # of xors with 5 = no change)
+var_19h = 0
+var_20h = 0x174e
+var_24h = 0x15d6
+var_38h = 1 (from eax = return value of main())
+
+Given the computed variables, we now have the following code where we want to execute je 0x401327 (for the output):
+
+0x004012fa      mov     dword [var_3ch], 5
+0x00401301      mov     dword [var_40h], 6
+0x00401308      mov     eax, dword [var_40h]
+0x0040130b      add     eax, 5
+0x0040130e      sar     eax, 5
+0x00401311      xor     eax, dword [var_3ch]
+0x00401314      mov     dword [var_44h], eax
+0x00401317      cmp     dword [var_38h], 1
+0x0040131b      je      0x401327
+0x0040131d      mov     edi, 0     ; int status
+0x00401322      call    exit  
+
+At the end of the 3 loops, we have the following:
+
+var_14h = 0x10f6af3
+var_18h = 6 (5966 iterations total = even # of xors with 5 = no change)
+var_19h = 0
+var_20h = 0x174e
+var_24h = 0x15d6
+var_38h = 1 (from eax = return value of main())
+var_3ch = 5
+var_40h = 6
+var_44h = ((6 + 5) / 32) ^ 5 = 5?
+
+Note that at this point var_38h needs to be 1 implies that we must enter 1a4f as our first 4 letter of str[abi:cxx11]. We now consider the following code snippet (after a whole bunch of variable initializations):
+
+
+0x0040142b      mov     esi, 4
+0x00401430      mov     edi, str[abi:cxx11] ; 0x602340
+0x00401435      call    std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::operator[](unsigned long) ; sym.imp.std::__cxx11::basic_string_char__std::char_traits_char___std::allocator_char___::operator___unsigned_long
+0x0040143a      movzx   ebx, byte [rax]
+0x0040143d      mov     esi, 1
+0x00401442      mov     edi, str[abi:cxx11] ; 0x602340
+0x00401447      call    std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::operator[](unsigned long) ; sym.imp.std::__cxx11::basic_string_char__std::char_traits_char___std::allocator_char___::operator___unsigned_long
+0x0040144c      movzx   eax, byte [rax]
+0x0040144f      cmp     bl, al
+0x00401451      jne     0x401470	; NOTE: avoid this branch
+
+0x00401453      mov     esi, 5
+0x00401458      mov     edi, str[abi:cxx11] ; 0x602340
+0x0040145d      call    std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::operator[](unsigned long) ; sym.imp.std::__cxx11::basic_string_char__std::char_traits_char___std::allocator_char___::operator___unsigned_long
+0x00401462      movzx   eax, byte [rax]
+0x00401465      cmp     al, 0x40	; 64
+0x00401467      jne     0x401470	; NOTE: avoid this branch
+
+0x00401469      mov     eax, 1
+0x0040146e      jmp     0x401475
+
+0x00401470      mov     eax, 0
+0x00401475      test    al, al
+0x00401477      je      0x4014dd
+
+At 0x401477, we need the branch to NOT be taken for any output. Hence, eax = 1. This implies that:
+
+str[abi:cxx11][0] = '1'
+str[abi:cxx11][2] = 'a'
+str[abi:cxx11][3] = '4'
+str[abi:cxx11][4] = 'f'
+str[abi:cxx11][4] = str[abi:cxx11][1] = 'a'
+str[abi:cxx11][5] = str[abi:cxx11][1] = 0x40 = '@'
+
+--> HENCE, OUR CURRENT USER INPUT STRING IS "1a4fa@"
+
+For safety, we analyze the final loop as follows:
+
+// Initialization
+0x00401479      lea     rax, [var_a0h]
+0x00401480      mov     qword [var_50h], rax
+0x00401484      mov     rax, qword [var_50h]
+0x00401488      mov     qword [var_30h], rax
+0x0040148c      mov     rax, qword [var_50h]
+0x00401490      add     rax, 0x29  ; 41
+0x00401494      mov     qword [var_58h], rax
+
+// Comparison
+0x00401498      mov     rax, qword [var_30h]
+0x0040149c      cmp     rax, qword [var_58h]
+0x004014a0      je      0x4014ce
+
+// Loop Body
+0x004014a2      mov     rax, qword [var_30h]
+0x004014a6      mov     qword [var_60h], rax
+0x004014aa      mov     rax, qword [var_60h]
+0x004014ae      movzx   eax, byte [rax]
+0x004014b1      xor     eax, 0x78  ; 120
+0x004014b4      mov     byte [var_61h], al
+0x004014b7      movsx   eax, byte [var_61h]
+0x004014bb      mov     esi, eax
+0x004014bd      mov     edi, std::cout ; 0x602200
+0x004014c2      call    std::basic_ostream<char, std::char_traits<char> >& std::operator<< <std::char_traits<char> >(std::basic_ostream<char, std::char_traits<char> >&, char) ; sym.imp.std::basic_ostream_char__std::char_traits_char_____std::operator____std::char_traits_char____std::basic_ostream_char__std::char_traits_char______char
+0x004014c7      add     qword [var_30h], 1
+0x004014cc      jmp     0x401498
+
+// LOOP EXIT = "cout << endl" + end of sym.__static_initialization_and_destruction
+0x004014ce      mov     esi, std::basic_ostream<char, std::char_traits<char> >& std::endl<char, std::char_traits<char> >(std::basic_ostream<char, std::char_traits<char> >&) ; 0x400ec0
+0x004014d3      mov     edi, std::cout ; 0x602200
+0x004014d8      call    std::ostream::operator<<(std::ostream& (*)(std::ostream&)) ; sym.imp.std::ostream::operator___std::ostream______std::ostream
+0x004014dd      mov     edi, 0     ; int status
+0x004014e2      call    exit       ; sym.imp.exit ; void exit(int status)
+
+FINAL COMMENT:
+
+A quick analysis reveals that our input string, "1a4fa@" is not touched and the loop performs arithmetic manipulation to display the final output string of "Well played! This is the only valid flag."
+
+As a general aside, there wasn't any obvious checks for an upper bound of string length, hence "1a4fa@xyz" also works.
+
+
+
+
+
+
+
+
+
+
+

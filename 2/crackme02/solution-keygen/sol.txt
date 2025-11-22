@@ -1,0 +1,126 @@
+$gdb crackme02_64bit
+>start
+>disassemble main
+###Step 1
+main...
+   0x0000000000400d3b <+122>:	callq  0x4006f0 <strlen@plt>	#check key length
+   0x0000000000400d40 <+127>:	cmp    $0x15,%rax		#key length must be 0x15(21 char)
+...
+   0x0000000000400d56 <+149>:	movzbl 0x2013a6(%rip),%eax      # key[3] (char)
+   0x0000000000400d5d <+156>:	mov    %al,-0x10(%rbp)
+   0x0000000000400d60 <+159>:	movzbl 0x20139d(%rip),%eax      # key[4] (char)
+   0x0000000000400d67 <+166>:	mov    %al,-0xf(%rbp)
+   0x0000000000400d6a <+169>:	movzbl 0x201394(%rip),%eax      # key[5] (char)
+   0x0000000000400d71 <+176>:	mov    %al,-0xe(%rbp)
+   0x0000000000400d74 <+179>:	movzbl 0x20138b(%rip),%eax      # key[6] (char)
+   0x0000000000400d7b <+186>:	mov    %al,-0xd(%rbp)
+   0x0000000000400d7e <+189>:	lea    -0x10(%rbp),%rax
+   0x0000000000400d82 <+193>:	mov    %rax,%rdi
+   0x0000000000400d85 <+196>:	callq  0x400760 <atoi@plt>	#atoi(key[3].key[4].key[5].key[6]) = a number that must be 1003 (decimal) so key[3] = 1,key[4,5] = 0,key[6] = 3
+   0x0000000000400d8a <+201>:	mov    %eax,-0x14(%rbp)
+...
+   0x0000000000400dd1 <+272>:	callq  0x400b2d <pepper>
+###Step 2
+pepper...
+   this function JUST check if  
+
+...
+   0x0000000000400b47 <+26>:	movzbl 0x2015bc(%rip),%eax      #key[10] (char)
+   0x0000000000400b4e <+33>:	cmp    $0x58,%al		#check if key[10] == 'X'
+   0x0000000000400b50 <+35>:	je     0x400b57 <pepper+42>
+   0x0000000000400b52 <+37>:	callq  0x400a17 <hades>		#reject input key
+...
+some garbage instructions...
+...
+   0x0000000000400bf0 <+195>:	movzbl 0x201511(%rip),%eax        # key[8] (char)
+   0x0000000000400bf7 <+202>:	mov    %al,-0x10(%rbp)
+   0x0000000000400bfa <+205>:	movzbl 0x201508(%rip),%eax        # key[9] (char)
+   0x0000000000400c01 <+212>:	mov    %al,-0xf(%rbp)
+   0x0000000000400c04 <+215>:	movzbl 0x2014ff(%rip),%eax        # key[10] (char)
+   0x0000000000400c0b <+222>:	mov    %al,-0xe(%rbp)
+   0x0000000000400c0e <+225>:	movzbl 0x2014f6(%rip),%eax        # key[11] (char)
+   0x0000000000400c15 <+232>:	mov    %al,-0xd(%rbp)
+   0x0000000000400c18 <+235>:	movzbl 0x2014ed(%rip),%eax        # key[12] (char)
+   0x0000000000400c1f <+242>:	mov    %al,-0xc(%rbp)
+   0x0000000000400c22 <+245>:	lea    -0x20(%rbp),%rdx
+   0x0000000000400c26 <+249>:	lea    -0x10(%rbp),%rax
+   0x0000000000400c2a <+253>:	mov    %rdx,%rsi
+   0x0000000000400c2d <+256>:	mov    %rax,%rdi
+   0x0000000000400c30 <+259>:	callq  0x400730 <strcmp@plt>	#check if $key[8..12] == '08X32'
+   0x0000000000400c35 <+264>:	test   %eax,%eax
+   0x0000000000400c37 <+266>:	je     0x400c3e <pepper+273>
+   0x0000000000400c39 <+268>:	callq  0x400a17 <hades>		#reject input key
+   0x0000000000400c3e <+273>:	callq  0x400aab <gaia>
+...
+###Step 3
+gaia...
+...
+   0x0000000000400acd <+34>:	movzbl 0x20163a(%rip),%eax        # key[14] (char)
+   0x0000000000400ad4 <+41>:	mov    %al,-0x10(%rbp)
+   0x0000000000400ad7 <+44>:	movzbl 0x201631(%rip),%eax        # key[15] (char)
+   0x0000000000400ade <+51>:	mov    %al,-0xf(%rbp)
+   0x0000000000400ae1 <+54>:	movzbl 0x201628(%rip),%eax        # key[16] (char)
+   0x0000000000400ae8 <+61>:	mov    %al,-0xe(%rbp)
+   0x0000000000400aeb <+64>:	movzbl 0x20161f(%rip),%eax        # key[17] (char)
+   0x0000000000400af2 <+71>:	mov    %al,-0xd(%rbp)
+   0x0000000000400af5 <+74>:	movzbl -0x10(%rbp),%edx
+   0x0000000000400af9 <+78>:	movzbl -0xe(%rbp),%eax
+   0x0000000000400afd <+82>:	cmp    %al,%dl			  #check if key[15] < key[17]
+   0x0000000000400aff <+84>:	jg     0x400b0d <gaia+98>
+   0x0000000000400b01 <+86>:	movzbl -0xd(%rbp),%edx
+   0x0000000000400b05 <+90>:	movzbl -0xf(%rbp),%eax
+   0x0000000000400b09 <+94>:	cmp    %al,%dl			  #check if key[16] <= key[19]
+   0x0000000000400b0b <+96>:	jge    0x400b12 <gaia+103>
+   0x0000000000400b0d <+98>:	callq  0x400a17 <hades>
+   0x0000000000400b12 <+103>:	callq  0x400a2f <Thor>
+...
+###Step 4
+Thor...
+   0x0000000000400a37 <+8>:	movzbl 0x2016d4(%rip),%eax        # key[18] (char)
+   0x0000000000400a3e <+15>:	cmp    $0x2d,%al		  #check if key[18] == '-' 
+   0x0000000000400a40 <+17>:	jne    0x400a58 <Thor+41>	
+   0x0000000000400a42 <+19>:	movzbl 0x2016ca(%rip),%eax        # key[19] (char)
+   0x0000000000400a49 <+26>:	cmp    $0x64,%al		  #check if key[18] == 'd'
+   0x0000000000400a4b <+28>:	jne    0x400a58 <Thor+41>
+   0x0000000000400a4d <+30>:	movzbl 0x2016c0(%rip),%eax        # key[21] (char)
+   0x0000000000400a54 <+37>:	cmp    $0x61,%al		  #check if key[18] == 'a'
+   0x0000000000400a56 <+39>:	je     0x400a5d <Thor+46>	 
+   0x0000000000400a58 <+41>:	callq  0x400a17 <hades>
+   0x0000000000400a5d <+46>:	movl   $0x0,-0x4(%rbp)
+   0x0000000000400a64 <+53>:	jmp    0x400a99 <Thor+106>
+   0x0000000000400a66 <+55>:	mov    -0x4(%rbp),%eax
+   0x0000000000400a69 <+58>:	cltq   
+   ...
+End
+###Sample Keys:
+
+kGh1003r08X32]nbnb-da
+GBU1003Y08X32weoeo-da
+dsc1003K08X32OjIjI-da
+DZm1003M08X32FASAS-da
+Dox1003`08X32z[b[b-da
+hPA1003n08X32wANAN-da
+s|N1003j08X32Prbrb-da
+a^O1003F08X32gtAtA-da
+|kJ1003m08X32olblb-da
+mM_1003Z08X32[TETE-da
+xrA1003`08X32tHjHj-da
+Mg]1003T08X32\pfpf-da
+`FZ1003|08X32lAbAb-da
+kfa1003v08X32bVzVz-da
+SgM1003h08X32sEyEy-da
+lUj1003L08X32Sobob-da
+Nko1003U08X32_dcdc-da
+ikC1003R08X32Fsxsx-da
+mUa1003X08X32pChCh-da
+qQD1003E08X32yO\O\-da
+KcG1003F08X32rw^w^-da
+Dxx1003_08X32`xAxA-da
+Gqn1003H08X32nhEhE-da
+]fn1003d08X32L`I`I-da
+\Nv1003J08X32DGxGx-da
+v_{1003F08X32Qvpvp-da
+qkw1003^08X32J|c|c-da
+SQG1003K08X32{FbFb-da
+ZY_1003P08X32ukiki-da
+XnV1003F08X32uztzt-da

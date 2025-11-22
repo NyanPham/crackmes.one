@@ -1,0 +1,33 @@
+The way the real segmentation fault was triggered is quite interesting, I've never seen that before. Thanks for the excellent crackme!
+
+PS I cheated. I was using ghidra with gef so I ended up following the CFG for main and skipping straight to step2().
+
+
+My inputs were AAAAAAAAAAAAAAAAAA to skip the intro and 80 to branch to the code that outputs 
+
+"ho damn, that's right...
+WHY ?
+
+
+$ ./adventure2 AAAAAAAAAAAAAAAAAA
+
+.
+.
+.
+
+- So you want to register to the guild ? Math question then !
+- it's totally not because i'm lazy or anything ! Bakkaaaa~ !
+what's 
+ + 3 * 5 ? 80
+BWAHAHAHAHA BAKAAAAAAAA !!! 0x017f4044 is super totally wrooong !
+Segmentation fault (core dumped)
+
+...
+
+ho damn, that's right...
+WHY ?
+
+To be continued... (you really succeded but i'll kill you anyway. don't worry, you'll be fine)
+
+Segmentation fault (core dumped)
+

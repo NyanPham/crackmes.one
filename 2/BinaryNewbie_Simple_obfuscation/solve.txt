@@ -1,0 +1,11 @@
+This crackme features anti-debugging techinique combined with some simple obfusation skills. 
+
+The main() is at 0x401610 and it first checks whether argc == 2. At 0x401635 it calls a function which tries to use ptrace to debug itself. If we are already debugging the program, this call will fail and the programs exits with an error message. The way to circumvent this is to modify the return value of this function in GDB, or statically patch the code to remove the detection. 
+
+It then checks the input string is 10 chars and then gets into the funciton at 0x401d10. It first allocate a buffer of the same size as the input (10 bytes), initialize it to abcdefghij, and then do some transformation on it. After that, the code checks how many characters of the input is equal to that of the transformed buffer. And it then check whether this number satisfies a last check. 
+
+We can analyze the code to understand the ten chars must all be equal. Or, as the author told us, there is only one valid key. Had we have some "free" chars, there will be more than one solutions. 
+
+Now we only need to understand how the code transforms the buffer. Or, we simply print its value and we get the key. Set a breakpoint before the comparison starts, like 0x401dad, and run "x/s $rbx" to get the key. 
+
+The correct key is: jcdefghiab. It then allows us to decrypt a zip which contains its source code. 

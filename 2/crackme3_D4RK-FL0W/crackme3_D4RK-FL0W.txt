@@ -1,0 +1,245 @@
+Let us analyze the main() function first, which is summarized in the following snippet:
+
+0x000011c5      call    get_code() ; sym.get_code
+0x000011ca      mov     qword [var_10h], rax
+0x000011ce      lea     rdi, code  ; 0x43c0 ; int64_t arg1
+0x000011d5      call    check_code(int*) ; sym.check_code_int
+0x000011da      xor     eax, 1
+0x000011dd      test    al, al
+0x000011df      je      0x11fe ; NEED TO TAKE THIS branch
+
+0x000011e1      lea     rsi, str.WRONG ; 0x2020
+0x000011e8      lea     rdi, std::cout ; sym..bss
+                                   ; 0x4180
+0x000011ef      call    std::basic_ostream<char, std::char_traits<char> >& std::operator<< <std::char_traits<char> >(std::basic_ostream<char, std::char_traits<char> >&, char const*) ; sym.imp.std::basic_ostream_char__std::char_traits_char_____std::operator____std::char_traits_char____std::basic_ostream_char__std::char_traits_char______char_const
+0x000011f4      mov     edi, 0     ; int status
+0x000011f9      call    exit       ; sym.imp.exit ; void exit(int status)
+
+0x000011fe      lea     rsi, str.You_Did_It. ; 0x2028
+0x00001205      lea     rdi, std::cout ; sym..bss
+
+The key idea here is we call get_code(), then ensure that check_code(int* to 0x43c0) == 1. Lets proceed to get_code() first:
+
+// LOOP #1 initialization
+0x00001331      mov dword [var_4h], 0
+
+// LOOP #1 comparison
+0x00001338      cmp dword [var_4h], 3
+0x0000133c      jg 0x13b2
+
+// LOOP #1 Main Body
+
+// Prompt for "Enter Digit #:"
+0x0000133e      lea rsi, str.Enter_Digit ; 0x2036
+0x00001345      lea rdi, std::cout ; sym..bss
+                                   ; 0x4180
+0x0000134c      call std::basic_ostream<char, std::char_traits<char> >& std::operator<< <std::char_traits<char> >(std::basic_ostream<char, std::char_traits<char> >&, char const*) ; sym.imp.std::basic_ostream_char__std::char_traits_char_____std::operator____std::char_traits_char____std::basic_ostream_char__std::char_traits_char______char_const
+0x00001351      mov rdx, rax
+0x00001354      mov eax, dword [var_4h]
+0x00001357      add eax, 1
+0x0000135a      mov esi, eax
+0x0000135c      mov rdi, rdx
+0x0000135f      call std::ostream::operator<<(int) ; sym.imp.std::ostream::operator___int
+0x00001364      lea rsi, [0x00002043]
+0x0000136b      mov rdi, rax
+0x0000136e      call std::basic_ostream<char, std::char_traits<char> >& std::operator<< <std::char_traits<char> >(std::basic_ostream<char, std::char_traits<char> >&, char const*) ; sym.imp.std::basic_ostream_char__std::char_traits_char_____std::operator____std::char_traits_char____std::basic_ostream_char__std::char_traits_char______char_const
+
+// Reading integer
+0x00001373      mov eax, dword [var_4h]
+0x00001376      cdqe
+0x00001378      lea rdx, [rax*4]
+0x00001380      lea rax, code      ; 0x43c0
+0x00001387      add rax, rdx
+0x0000138a      mov rsi, rax
+0x0000138d      lea rdi, std::cin  ; 0x42a0
+0x00001394      call std::istream::operator>>(int&) ; sym.imp.std::istream::operator___int
+
+// Print newline ("\n")
+0x00001399      lea rsi, [0x00002046]
+0x000013a0      lea rdi, std::cout ; sym..bss
+                                   ; 0x4180
+0x000013a7      call std::basic_ostream<char, std::char_traits<char> >& std::operator<< <std::char_traits<char> >(std::basic_ostream<char, std::char_traits<char> >&, char const*) ; sym.imp.std::basic_ostream_char__std::char_traits_char_____std::operator____std::char_traits_char____std::basic_ostream_char__std::char_traits_char______char_const
+0x000013ac      add dword [var_4h], 1
+0x000013b0      jmp 0x1338
+
+// LOOP #1 end
+0x000013b2      lea rax, code      ; 0x43c0
+0x000013b9      leave
+0x000013ba      ret
+
+Here, we can model the above assembly code into pseudo C code as follows:
+
+int* get_code() {
+	int* code = malloc(4 * sizeof(int)); // at 0x43c0
+	for (int var_4h = 0; var_4h <= 3; var_4h++) {
+		cout << "Enter Digit " << var_4h << ":";
+		cin >> *(code + (var_4h * 4)); // Note: *4 here for illustration purposes, basically go to next index
+		cout << "\n";
+	}
+	return code;
+}
+
+So basically we are trying to read a total of 4 integers into an array which is returned by the function and used by check_code(). Lets proceed with check_code(), which takes on the following format:
+
+// Initialization
+0x00001265      push rbp
+0x00001266      mov rbp, rsp
+0x00001269      push rbx
+0x0000126a      sub rsp, 0x18
+0x0000126e      mov qword [var_18h], rdi ; arg1
+
+// First check
+0x00001272      mov rax, qword [var_18h]
+0x00001276      mov ebx, dword [rax]
+0x00001278      mov esi, 0xa
+0x0000127d      lea rdi, p1        ; 0x4080
+0x00001284      call get_digit(int*, int) ; sym.get_digit_int___int
+0x00001289      cmp ebx, eax
+0x0000128b      setne al
+0x0000128e      test al, al
+0x00001290      je 0x129c
+
+// Second check
+0x0000129c      mov rax, qword [var_18h]
+0x000012a0      add rax, 4
+0x000012a4      mov ebx, dword [rax]
+0x000012a6      mov esi, 0xa
+0x000012ab      lea rdi, p2        ; 0x40c0
+0x000012b2      call get_digit(int*, int) ; sym.get_digit_int___int
+0x000012b7      cmp ebx, eax
+0x000012b9      setne al
+0x000012bc      test al, al
+0x000012be      je 0x12c7
+
+// Third check
+0x000012c7      mov rax, qword [var_18h]
+0x000012cb      add rax, 8
+0x000012cf      mov ebx, dword [rax]
+0x000012d1      mov esi, 0xa
+0x000012d6      lea rdi, p3        ; 0x4100
+0x000012dd      call get_digit(int*, int) ; sym.get_digit_int___int
+0x000012e2      cmp ebx, eax
+0x000012e4      setne al
+0x000012e7      test al, al
+0x000012e9      je 0x12f2
+
+// Fourth check
+0x000012f2      mov rax, qword [var_18h]
+0x000012f6      add rax, 0xc
+0x000012fa      mov ebx, dword [rax]
+0x000012fc      mov esi, 0xa
+0x00001301      lea rdi, p4        ; 0x4140
+0x00001308      call get_digit(int*, int) ; sym.get_digit_int___int
+0x0000130d      cmp ebx, eax
+0x0000130f      setne al
+0x00001312      test al, al
+0x00001314      je 0x131d
+
+// Done (we need eax = 1 as return value so that main() gives us the result we want!)
+0x0000131d      mov eax, 1
+0x00001322      add rsp, 0x18
+0x00001326      pop rbx
+0x00001327      pop rbp
+0x00001328      ret
+
+
+
+Here, var_18h = first argument = code array returned by get_code() = our 4 inputs. A combination of the assembly above at some poking around in memory reveals the following pseudo C code that is likely to be logically equivalent to the above assembly:
+
+int check_code(int* code) { 
+	// Note: we can guess  baed on memory layout that 0xa is the length of the array = 10...
+	if (code[0] == get_digit(int* at 0x4080, 0xa)) return 0; // 0x4080 has [0x01, 0x03, 0x01, 0x01, 0x04, 0x04, 0x04, 0x06, 0x06, 0x06]
+	if (code[1] == get_digit(int* at 0x40c0, 0xa)) return 0; // 0x40c0 has [0x0a, 0x0a, 0x0a, 0x06, 0x46, 0x46, 0x46, 0x23, 0x23, 0x23]
+	if (code[2] == get_digit(int* at 0x4100, 0xa)) return 0; // 0x4100 has [0x07, 0x44, 0x44, 0x44, 0x17, 0x17, 0x17, 0x28, 0x28, 0x28]
+	if (code[3] == get_digit(int* at 0x4140, 0xa)) return 0; // 0x4140 has [0x04, 0x03, 0x03, 0x03, 0x05, 0x05, 0x05, 0x07, 0x07, 0x07]
+	return 1;	
+}
+
+Clearly, all we need to to do now is look at how get_digit() works and compute the corresponding value for the code involved, with get_digit(intarray, intarraylength) starting as follows:
+
+// LOOP #2 initialization
+
+0x000013bf      mov qword [var_18h], rdi ; arg1 = array of integers
+0x000013c3      mov dword [var_1ch], esi ; arg2 = length of array
+0x000013c6      mov dword [var_4h], 0
+0x000013cd      mov dword [var_8h], 0
+0x000013d4      mov dword [var_ch], 0
+
+// LOOP #2 comparison
+
+0x000013db      mov eax, dword [var_ch]
+0x000013de      cmp eax, dword [var_1ch]
+0x000013e1      jge 0x1435
+
+// LOOP #2 body
+
+// Step 1: Obtain intarray[var_ch]
+0x000013e3      mov eax, dword [var_ch]
+0x000013e6      cdqe
+0x000013e8      lea rdx, [rax*4]
+0x000013f0      mov rax, qword [var_18h]
+0x000013f4      add rax, rdx
+0x000013f7      mov eax, dword [rax]
+
+// Step 1 key operation
+0x000013f9      and eax, dword [var_4h]
+0x000013fc      or dword [var_8h], eax
+
+
+// Step 2: Obtain intarray[var_ch] (again)
+0x000013ff      mov eax, dword [var_ch]
+0x00001402      cdqe
+0x00001404      lea rdx, [rax*4]
+0x0000140c      mov rax, qword [var_18h]
+0x00001410      add rax, rdx
+0x00001413      mov eax, dword [rax]
+
+// Step 2 key operation
+0x00001415      xor dword [var_4h], eax
+
+// Step 3 key operations
+0x00001418      mov eax, dword [var_4h]
+0x0000141b      and eax, dword [var_8h]
+0x0000141e      not eax
+0x00001420      mov dword [var_10h], eax
+
+0x00001423      mov eax, dword [var_10h]
+0x00001426      and dword [var_4h], eax
+
+0x00001429      mov eax, dword [var_10h]
+0x0000142c      and dword [var_8h], eax
+
+// LOOP #2 Increment
+
+0x0000142f      add dword [var_ch], 1
+0x00001433      jmp 0x13db
+
+// End of get_digit()
+
+0x00001435      mov eax, dword [var_4h]
+0x00001438      pop rbp
+0x00001439      ret
+
+Based on the above loop structure, we have the following structure (in pseudo-C code) as follows:
+
+int get_digit(int* intarray, int intarrlength) {
+	// Assembly form consistency purposes
+	int* var_18h = intarray;
+	int var_1ch = intarrlength;
+	// Initialized variables
+	int var_4h = 0, var_8h = 0;
+	// Loop
+	for (int var_ch = 0; var_ch < var_1ch; var_ch++) { // Loop through every number in array
+		// Step 1
+		var_8h |= intarray[var_ch] & var_4h;
+		// Step 2
+		var_4h ^= intarray[var_ch];
+		// Step 3
+		int var_10h = ~(var_4h & var_8h);
+		var_4h &= var_10h;
+		var_8h &= var_10h;
+	}
+	return var_4h; // Result
+}
+
+Implementing this in proper C code (attached as test.c), we obtain 3674 as the final code.

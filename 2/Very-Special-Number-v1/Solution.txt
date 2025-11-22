@@ -1,0 +1,104 @@
+Solve it with Ghidra.
+
+First look showed us that this is a 64-bit ELF executable, dynamically linked, not stripped.
+-------------------------------------------------------------------------------------------------------
+prygoon@Archowl:~/Crackmes/owo_whats_this's Very Special Number v1$ file OwO_vsn_1 
+OwO_vsn_1: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, 
+interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=238174dec0aed75b00dcbf9bbccfc7ce7cc799da, 
+for GNU/Linux 3.2.0, not stripped
+-------------------------------------------------------------------------------------------------------
+
+At startup, it displays a welcome message and a prompt to enter a number. The program responds to the 
+first number entered at random with an fail message
+-------------------------------------------------------------------------------------------------------
+prygoon@Archowl:~/Crackmes/owo_whats_this's Very Special Number v1$ ./OwO_vsn_1 
+Hi! Can you guess my Special Number?
+65656565
+Wrong! Try again :)
+-------------------------------------------------------------------------------------------------------
+
+Let's open the ghidra and see the code. Since the binary is not stripped, we can see the names of 
+functions, variables and debug information. in the main function you can see a call to std::cout << 
+with a welcome message, and a call to std::cin >> which stores user input in rbp-0x10
+-------------------------------------------------------------------------------------------------------
+      0010133a 48 8D 45 F0             LEA    RAX=>local_18,[RBP + -0x10]
+      0010133e 48 89 C6                MOV    RSI,RAX
+      00101341 48 8D 3D B8 2E 00 00    LEA    RDI,[std::cin]                                          
+      00101348 E8 23 FD FF FF          CALL   operator>>                                                
+-------------------------------------------------------------------------------------------------------
+
+Then there is a call function named "generate" which returns to us the key value. In the generate function 
+the "genNum" function is called with 5 arguments: magic_number1 + magic_number2, magic_number2, 5, 0, 0.
+-------------------------------------------------------------------------------------------------------
+      001012c8 48 8B 05 B9 2D 00 00    MOV    RAX,qword ptr [magic_number2]    ; = 000000082245E133h
+      001012cf 48 8B 0D AA 2D 00 00    MOV    RCX,qword ptr [magic_number1]    ; = 0000000946E2553Fh
+      001012d6 48 8B 15 AB 2D 00 00    MOV    RDX,qword ptr [magic_number2]    ; = 000000082245E133h
+      001012dd 48 8D 3C 11             LEA    RDI,[RCX + RDX*0x1]
+      001012e1 41 B8 00 00 00 00       MOV    R8D,0x0
+      001012e7 B9 00 00 00 00          MOV    ECX,0x0
+      001012ec BA 05 00 00 00          MOV    EDX,0x5
+      001012f1 48 89 C6                MOV    RSI,RAX
+      001012f4 E8 90 FE FF FF          CALL   genNum                                                    
+-------------------------------------------------------------------------------------------------------
+
+In the "genNum" function, there is a switch for 5 cases for the 4th argument. In the case 0: 
+local_28 = param_1 + param_2 + 0x2a;
+break;
+-------------------------------------------------------------------------------------------------------
+ 
+      001011d0 48 8B 45 F0             MOV    RAX,qword ptr [RBP + local_18]
+      001011d4 48 8D 50 2A             LEA    param_3,[RAX + 0x2a]
+      001011d8 48 8B 45 F8             MOV    RAX,qword ptr [RBP + local_10]
+      001011dc 48 01 D0                ADD    RAX,param_3
+      001011df 48 89 45 E0             MOV    qword ptr [RBP + local_28],RAX
+      001011e3 EB 7B                   JMP    switchD_001011ce::caseD_6
+-------------------------------------------------------------------------------------------------------
+
+Other cases with our arguments for "genNum" are not used, because param_4 = 0 and is not changed by this 
+function. As a result, we get:
+param_1 = 0x82245E133 + 0x946E2553F = 0x1169283672
+param_2 = 0x82245E133
+After case 0:
+result = param_1 + param_2 + 0x2A = 0x198b6e17cf = 109713430479 in decimal.
+And then function returns thats number to the "generate" and then to main function. In the main function, 
+this number is compared with the user input and branches into one of two calls std::cout with a fail 
+or win message.
+-------------------------------------------------------------------------------------------------------
+      00101352 48 8B 55 F0                   MOV            RDX,qword ptr [RBP + local_18]
+      00101356 48 39 D0                      CMP            RAX,RDX
+      00101359 0F 94 C0                      SETZ           AL
+      0010135c 84 C0                         TEST           AL,AL
+      0010135e 74 2A                         JZ             LAB_0010138a
+      00101360 48 8D 35 E6 0C 00 00          LEA            RSI,[s_You_must_be_psychic_:O_0010204d]    ; = "You must be psychic :O"
+      00101367 48 8D 3D 72 2D 00 00          LEA            RDI,[std::cout]                                           
+      0010136e E8 CD FC FF FF                CALL           operator<<                                                 
+      00101373 48 89 C2                      MOV            RDX,RAX
+      00101376 48 8B 05 53 2C 00 00          MOV            RAX,qword ptr [->endl<char,std::char_traits<char>>]     
+      0010137d 48 89 C6                      MOV            RSI=>endl<char,std::char_traits<char>>,RAX                 
+      00101380 48 89 D7                      MOV            RDI,RDX
+      00101383 E8 C8 FC FF FF                CALL           operator<<                                                
+      00101388 EB 28                         JMP            LAB_001013b2
+                         LAB_0010138a                              XREF[1]:   0010135e(j)  
+      0010138a 48 8D 35 D3 0C 00 00          LEA            RSI,[s_Wrong!_Try_again_:)_00102064]    ; = "Wrong! Try again :)"
+      00101391 48 8D 3D 48 2D 00 00          LEA            RDI,[std::cout]                                            
+      00101398 E8 A3 FC FF FF                CALL           operator<<                                                 
+      0010139d 48 89 C2                      MOV            RDX,RAX
+      001013a0 48 8B 05 29 2C 00 00          MOV            RAX,qword ptr [->endl<char,std::char_traits<char>>]        
+      001013a7 48 89 C6                      MOV            RSI=>endl<char,std::char_traits<char>>,RAX                 
+      001013aa 48 89 D7                      MOV            RDI,RDX
+      001013ad E8 9E FC FF FF                CALL           operator<<                                                 
+
+-------------------------------------------------------------------------------------------------------
+
+Trying to enter the resulting number in the program.
+-------------------------------------------------------------------------------------------------------
+prygoon@Archowl:~/Crackmes/owo_whats_this's Very Special Number v1$ ./OwO_vsn_1 
+Hi! Can you guess my Special Number?
+109713430479
+You must be psychic :O
+-------------------------------------------------------------------------------------------------------
+
+And here is the solution!
+
+Here is the C code with the restored functions "generate" and "genNum" which returns the required key.
+https://pastebin.com/UBpv9tY7

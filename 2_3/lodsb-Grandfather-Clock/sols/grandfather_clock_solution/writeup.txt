@@ -1,0 +1,178 @@
+Grandfather Clock by lodsb
+
+Language: 	C/C++
+Difficulty:	2.0
+Platform:	Unix/linux etc.
+Tools:		Ghidra 10.0
+
+Analysis:
+
+  The binary is not stripped thus navigating to main is a breeze. Navigate
+to main and see that the main signature involves command line arguments.
+
+        001013ea 83 7d fc 01     CMP        dword ptr [RBP + -0x4],0x1
+        001013ee 75 19           JNZ        LAB_00101409
+
+  The program expects at least one command line argument besides the program
+name. Not branching at 0x1013ee prints a message and returns from main.
+
+        00101409 48 8b 45 f0     MOV        RAX,qword ptr [RBP + -0x10]
+        0010140d 48 83 c0 08     ADD        RAX,0x8
+        00101411 48 8b 00        MOV        RAX,qword ptr [RAX]
+        00101414 48 89 c7        MOV        RDI,RAX
+        00101417 e8 44 fc        CALL       <EXTERNAL>::strlen
+                 ff ff
+        0010141c 83 e0 01        AND        EAX,0x1
+        0010141f 48 85 c0        TEST       RAX,RAX
+        00101422 74 16           JZ         LAB_0010143a
+
+  The length of the string in command line argument array index 1 is found.
+If its length is odd the program prints a message and returns from main.
+  
+        0010143a 48 8b 45 f0     MOV        RAX,qword ptr [RBP + -0x10]
+        0010143e 48 83 c0 08     ADD        RAX,0x8
+        00101442 48 8b 00        MOV        RAX,qword ptr [RAX]
+        00101445 48 89 c7        MOV        RDI,RAX
+        00101448 e8 d4 fe        CALL       _99adb5ad_c9d1_44ff_84ce_b52782ac7aeb
+                 ff ff
+
+  The command line argument is then passed as an argument to the function
+with the cryptic name called at 0x101448.
+
+  Descending into that function shows the code that generates a string
+based on the command line argument passed to it.
+
+        0010132a 48 89 7d b8     MOV        qword ptr [RBP + -0x48],RDI
+        0010132e 48 8b 45 b8     MOV        RAX,qword ptr [RBP + -0x48]
+        00101332 48 89 c7        MOV        RDI,RAX
+        00101335 e8 26 fd        CALL       <EXTERNAL>::strlen
+                 ff ff
+        0010133a 48 89 45 e0     MOV        qword ptr [RBP + -0x20],RAX
+        0010133e 48 c7 45        MOV        qword ptr [RBP + -0x30],0x0
+                 d0 00 00 
+                 00 00
+        00101346 48 8b 45 e0     MOV        RAX,qword ptr [RBP + -0x20]
+        0010134a 48 83 e8 01     SUB        RAX,0x1
+        0010134e 48 89 45 d8     MOV        qword ptr [RBP + -0x28],RAX
+        00101352 c6 45 cf fe     MOV        byte ptr [RBP + -0x31],0xfe
+        00101356 48 8b 45 e0     MOV        RAX,qword ptr [RBP + -0x20]
+        0010135a 48 8d 58 01     LEA        RBX,[RAX + 0x1]
+        0010135e 48 8b 45 e0     MOV        RAX,qword ptr [RBP + -0x20]
+        00101362 48 83 c0 01     ADD        RAX,0x1
+        00101366 48 89 c7        MOV        RDI,RAX
+        00101369 e8 32 fd        CALL       <EXTERNAL>::malloc
+        0010136e 48 89 da        MOV        RDX,RBX
+        00101371 be 00 00        MOV        ESI,0x0
+                 00 00
+        00101376 48 89 c7        MOV        RDI,RAX
+        00101379 e8 02 fd        CALL       <EXTERNAL>::memset
+                 ff ff
+        0010137e 48 89 45 e8     MOV        qword ptr [RBP + -0x18],RAX
+
+  The function argument is stored at RBP - 0x48 and then its length is
+determined with a call to strlen. The string length is stored at RBP - 0x20.
+RBP - 0x30 will used as a loop counter in the loop that will be encountered
+shortly. It is initialized to 0. One less than the length is stored at
+RBP - 0x28 and will also be used in the loop. 254 is then stored at
+RBP - 0x31. Finally a block of memory is created on the heap with a call to
+malloc and has all its locations zeroed out with a call to memset. That
+memory block is stored at RBP - 0x18. Now we are ready to venture into the
+loop that generates a flag to be compared to determine if we entered a valid
+value.
+
+        001013c7 48 8b 45 d0     MOV        RAX,qword ptr [RBP + -0x30]
+        001013cb 48 3b 45 e0     CMP        RAX,qword ptr [RBP + -0x20]
+        001013cf 72 b3           JC         LAB_00101384
+
+  RBP - 0x30 is the loop index and the loop will be exited if its value
+is greater than or equal to string length of the function argument that is
+stored at RBP - 0x20.
+
+        00101384 48 8b 55 b8     MOV        RDX,qword ptr [RBP + -0x48]
+        00101388 48 8b 45 d8     MOV        RAX,qword ptr [RBP + -0x28]
+        0010138c 48 01 d0        ADD        RAX,RDX
+        0010138f 0f b6 00        MOVZX      EAX,byte ptr [RAX]
+
+  RBP - 0x48 stores the value of the string passed into the function as
+an argument. RBP - 0x28 stores the value of that string length minus 1.
+The byte at that address, the sum of the two values, is placed in the EAX
+register.
+
+        00101392 8d 48 e0        LEA        ECX,[RAX + -0x20]
+
+  The byte is then subtracted by 32 and that value is placed in the ECX
+register.
+
+        00101395 48 8b 55 e8     MOV        RDX,qword ptr [RBP + -0x18]
+        00101399 48 8b 45 d0     MOV        RAX,qword ptr [RBP + -0x30]
+        0010139d 48 01 d0        ADD        RAX,RDX
+        001013a0 89 ca           MOV        EDX,ECX
+        001013a2 88 10           MOV        byte ptr [RAX],DL
+
+  The byte, remember subtracted by 32, is then placed in the memory block
+allocated at RBP - 0x18 with an offset number of bytes. The offset is the
+value in RBP - 0x30, our loop index. Note, the byte is moved from ECX to
+EDX at line 0x1013a0.
+
+        001013a4 48 0f be        MOVSX      RAX,byte ptr [RBP + -0x31]
+                 45 cf
+        001013a9 48 01 45 d8     ADD        qword ptr [RBP + -0x28],RAX
+        001013ad 48 83 7d        CMP        qword ptr [RBP + -0x28],-0x1
+                 d8 ff
+        001013b2 75 0e           JNZ        LAB_001013c2
+
+  RBP - 0x28, initially the length of the argument passed to the function
+minus 1, is then incremented by the value in RBP - 0x31. This value is
+initially 254. The instruction is a move sign extended from a byte value.
+This results in a decrementing operation since the intial value of 254
+is a negative (two's complement) number. RBP - 0x28 is then compared to -1.
+If it is not -1, the code jumps to 0x1013c2.
+
+        001013b4 48 83 45        ADD        qword ptr [RBP + -0x28],0x1
+                 d8 01
+        001013b9 0f b6 45 cf     MOVZX      EAX,byte ptr [RBP + -0x31]
+        001013bd f7 d8           NEG        EAX
+        001013bf 88 45 cf        MOV        byte ptr [RBP + -0x31],AL
+
+  If the value is -1, RBP - 0x28 has 1 added thus zeroing it out. The two's
+complement of RBP - 0x31 is then determined and stored back in RBP - 0x31.
+Essentially the code decrements the value in RBP - 0x28 by 2 until it is -1.
+At the point the value at RBP - 0x28 is set to 0 and then its value is 
+incremented by 2.
+
+        001013c2 48 83 45        ADD        qword ptr [RBP + -0x30],0x1
+                 d0 01
+
+  The loop index is incremented by 1. The function returns the string
+generated in the loop.
+
+        0010144d 48 89 c6        MOV        RSI,RAX
+        00101450 48 8d 05        LEA        RAX,[_867a0be1_691e_4546_9b6c_020df3bcdc93]
+                 c9 0b 00 00
+        00101457 48 89 c7        MOV        RDI=>_867a0be1_691e_4546_9b6c_020df3bcdc93,RAX
+        0010145a e8 31 fc        CALL       <EXTERNAL>::strcmp
+                 ff ff
+        0010145f 85 c0           TEST       EAX,EAX
+
+  The string generated from the function is then compared against a hardcoded
+value. If they are equal the Congratulations message is printed.
+
+Summary:
+
+  The program takes a string as a command line argument. The string is
+looped over. The byte at the last index in the argument string is subtracted
+by 32 and moved into the first index of the flag string. The argument string
+index is decremented by 2 while the index of the flag is incremented by 1.
+The argument index byte is subtracted by 32 and moved into the flag index
+byte. This is done until the argument index is -1. At that point the
+argument index is set to zero and is incremented by 2 until the loop
+completes. The flag index is always incremented by 1. Take the hardcoded
+value passed to the strcmp function before printing the Congratulations
+message. Simply add 32 to each character in the harcoded string while
+reversing the indices discussed above to generate the valid flag.
+
+  Attached is sample C source code file with the code to generate the valid
+flag.
+
+- dev0
+

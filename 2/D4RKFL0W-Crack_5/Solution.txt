@@ -1,0 +1,32 @@
+==================================
+Solution
+==================================
+mystery@mystery:~/Documents/Crack_5$ ./crack_5 12345678 ZXXXXXX
+
+Password: P0iNT3R_tYPe5_M4tt3r
+
+Correct
+mystery@mystery:~/Documents/Crack_5$
+==================================
+End Solution
+==================================
+
+
+Explanation
+------------------------
+The main function begins by passing in a argv[1] and argv[2] into a function.
+By checking this function, all it does is check that strlen(argv[1])==8,
+and that argv[2][strlen(argv[2])-2]==X and strlen(argv[2])!=8. If you do this,
+the function returns true, and you continue in the binary, rather that exit.
+After this, argv is never used again, so you can use many things
+
+Then there's some hardcoded "strings" in the binary, and it runs some
+operations on them in a loop. However, it doesn't really matter what these are
+or what they do because after these conversions, you enter a "password", and
+without changing what you entered, it compares it to the output of all those
+functions. So, no, you can't run "strings" on it, but just go into gdb, and
+examine rsi before the string comparison is called, and you'll see 
+"P0iNT3R_tYPe5_M4tt3r"
+
+Enter this when the password is prompted and you'll get the "Correct" output
+

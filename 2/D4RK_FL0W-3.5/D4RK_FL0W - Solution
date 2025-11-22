@@ -1,0 +1,34 @@
+Solution by: Starstruck
+
+Author: D4RKFL0W
+
+Programme used: radare2
+
+Solution: Opening the programme in radare2 with the -d argument it, analyze it and print all of the functions. If you seek to main you can see that a functions is in there called checkPassword. Looking at all of the functions once again,
+seek to the checkPassword function. Printing the dissasembly, you will notice that there are multiple je jumps that are preceeded by a cmp. This tells us that there is some type of check going on and if the check fails it moves 
+0 into the rax register and then quits the programme. If you look at the assembly that preceeds the cmp statement you will see our actual input (the variable) being moved around the registers and it ends up in the rdx register.
+
+|           0x55b3e6f3c3c1      8b5010         mov edx, dword [rax + 0x10] <-- the first digit that we entered
+|           0x55b3e6f3c3c4      488b45f8       mov rax, qword [var_8h] <-- what it will compare it too
+|           0x55b3e6f3c3c8      8b00           mov eax, dword [rax]
+|           0x55b3e6f3c3ca      39c2           cmp edx, eax <-- compares our input to the variable in the programme
+
+If you place a breakpoint before the cmp we can actually look in the rax register before the cmp happens to see what it is comparing it too. If you break before the first check you will see that our input is in the 
+rdx register and what our input is being compared to is in the rax register. So now you just have to repeat this proccess of placing a breakpoint before each cmp and looking into the rax register to see what our input is being compared to.
+HOWEVER. There is something you have to mindfull of. Looking at everytime the programme puts the user input into the rdx register, you will notice that it actually does this check a little out of order. 
+
+FIRST COMPARE
+x55a50268f3c1      8b5010         mov edx, dword [rax + 0x10] <-- First digit
+
+SECOND COMPARE
+0x55a50268f3d9      8b5018         mov edx, dword [rax + 0x18] <-- Third digit
+
+THIRD COMPARE
+0x55a50268f3f2      8b5014         mov edx, dword [rax + 0x14] <-- Second digit
+
+FOURTH COMPARE
+0x55a50268f40b      8b501c         mov edx, dword [rax + 0x1c] <-- Fourth digit
+
+The programme actually checks the first digit you entered, then the third, then the second and then the fourth. If you continou this proccess of looking into the rax register before the cmp happens you will get the numbers:
+4 2 7 3
+

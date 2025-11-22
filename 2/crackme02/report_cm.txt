@@ -1,0 +1,534 @@
+First, we will execute it, just to get an idea of how it looks like
+
+  $> ./crackme02_64bit
+          ************************
+        *      Welcome to      *
+        *      Crackme 02      *
+        *----------------------*
+        * Rules:               *
+        *                      *
+        * 1. No Patching       *
+        * 2. write a keygen    *
+        *----------------------*
+        *      Good luck!      *
+        ************************
+   Please enter your serial: 101
+   your serial is invalid
+
+Now we will desassemble it, with the following commands:
+
+   $> objdump -d crackme02_64bit > obj
+   $> echo "-----------STRINGS-----------" >> obj
+   $> strings -t x crackme02_64bit >> obj
+
+I use the ‘strings’ command to have an overview on the strings and their offset, it can be pretty useful.
+
+Let’s check the main function, at least the beginning:
+
+  400cd8:       e8 a9 fc ff ff          callq  400986 <intro>
+  400cdd:       e8 18 fd ff ff          callq  4009fa <luna>
+  400ce2:       e8 16 fc ff ff          callq  4008fd <serial>
+  400ce7:       e8 a1 fb ff ff          callq  40088d <anubis>
+  400cec:       e8 68 ff ff ff          callq  400c59 <salt>
+  400cf1:       e8 97 fb ff ff          callq  40088d <anubis>
+  400cf6:       e8 02 fc ff ff          callq  4008fd <serial>
+  400cfb:       bf ad 0f 40 00          mov    $0x400fad,%edi
+  400d00:       b8 00 00 00 00          mov    $0x0,%eax
+  400d05:       e8 06 fa ff ff          callq  400710 <printf@plt>
+  400d0a:       be 00 21 60 00          mov    $0x602100,%esi
+  400d0f:       bf c8 0f 40 00          mov    $0x400fc8,%edi
+  400d14:       b8 00 00 00 00          mov    $0x0,%eax
+  400d19:       e8 52 fa ff ff          callq  400770 <__isoc99_scanf@plt>
+  400d1e:       89 45 e8                mov    %eax,-0x18(%rbp)
+  400d21:       48 8b 05 b8 13 20 00    mov    0x2013b8(%rip),%rax # STDIN
+  400d28:       48 89 c7                mov    %rax,%rdi
+  400d2b:       e8 20 fa ff ff          callq  400750 <fflush@plt>
+  400d30:       83 7d e8 01             cmpl   $0x1,-0x18(%rbp)
+  400d34:       75 10                   jne    400d46 <main+0x85>
+  400d36:       bf 00 21 60 00          mov    $0x602100,%edi
+  400d3b:       e8 b0 f9 ff ff          callq  4006f0 <strlen@plt>
+  400d40:       48 83 f8 15             cmp    $0x15,%rax
+  400d44:       74 05                   je     400d4b <main+0x8a>
+  400d46:       e8 cc fc ff ff          callq  400a17 <hades>
+
+Hmm, we have here a lot of call to some functions, we will have to analyse them one by one to understand the process. It is then followed by a printf, which will output: ‘Please enter your serial:’
+
+Let’s skip the ‘intro’ function as it is only calls to puts, so to display the intro message I guess.
+
+What about luna? Here is the code:
+
+  4009fe:       48 83 ec 10             sub    $0x10,%rsp
+  400a02:       c7 45 f8 14 00 00 00    movl   $0x14,-0x8(%rbp)
+  400a09:       c7 45 fc 1e 00 00 00    movl   $0x1e,-0x4(%rbp)
+  400a10:       e8 78 fe ff ff          callq  40088d <anubis>
+
+It seems to create two integers, with the value 20 (0x14) and 30 (0x1e) and then proceeds to call ‘anubis’.
+
+And, something is weird here, the function anubis also only creates variable on the stack, and return directly afterwards… I don’t think it has any impact on the program actually. The next function, ‘serial’ seems to do also the same kind of thing, only moving hardcoded data on the stack, and then returning.
+
+Hm, I will ignore these functions for the moment, and continue with the one named ‘salt’. I put some comment on the code, to explain what it does.
+
+  400c5d:       c7 45 fc 00 00 00 00    movl   $0x0,-0x4(%rbp) # init a variable (a) with 0
+  400c64:       c7 45 f8 01 00 00 00    movl   $0x1,-0x8(%rbp) # init a variable (i) with 1
+  400c6b:       eb 49                   jmp    400cb6 <salt+0x5d>
+  400c6d:       8b 4d f8                mov    -0x8(%rbp),%ecx    # ?
+  400c70:       ba 67 66 66 66          mov    $0x66666667,%edx   # ?
+  400c75:       89 c8                   mov    %ecx,%eax          # ?
+  400c77:       f7 ea                   imul   %edx               # ?
+  400c79:       c1 fa 03                sar    $0x3,%edx          # ?
+  400c7c:       89 c8                   mov    %ecx,%eax          # ?
+  400c7e:       c1 f8 1f                sar    $0x1f,%eax         # ?
+  400c81:       29 c2                   sub    %eax,%edx          # ?
+  400c83:       89 d0                   mov    %edx,%eax          # ?
+  400c85:       c1 e0 02                shl    $0x2,%eax          # ?
+  400c88:       01 d0                   add    %edx,%eax          # ?
+  400c8a:       c1 e0 02                shl    $0x2,%eax          # ?
+  400c8d:       29 c1                   sub    %eax,%ecx          # ?
+  400c8f:       89 ca                   mov    %ecx,%edx          # ?
+  400c91:       83 fa 03                cmp    $0x3,%edx          # ?
+  400c94:       75 1c                   jne    400cb2 <salt+0x59> # ?
+  400c96:       81 7d f8 e8 03 00 00    cmpl   $0x3e8,-0x8(%rbp)  # if i < 0x3e8 (1000)
+  400c9d:       7e 13                   jle    400cb2 <salt+0x59> #  redo the previous steps
+  400c9f:       8b 45 fc                mov    -0x4(%rbp),%eax
+  400ca2:       48 98                   cltq
+  400ca4:       8b 55 f8                mov    -0x8(%rbp),%edx
+  400ca7:       89 14 85 20 21 60 00    mov    %edx,0x602120(,%rax,4) # array_integer[a] = b
+  400cae:       83 45 fc 01             addl   $0x1,-0x4(%rbp) # a++
+  400cb2:       83 45 f8 01             addl   $0x1,-0x8(%rbp) # b++
+  400cb6:       81 7d f8 d0 07 00 00    cmpl   $0x7d0,-0x8(%rbp) # if i > 0x7d0 (2000) -> return
+  400cbd:       7e ae                   jle    400c6d <salt+0x14>
+
+This function seems to generate data, by following a particular algorithm and store it in a array. We can see that this array will consist of integers, with the following code
+
+mov    %edx,0x602120(,%rax,4) # which translates like this in C : 
+                              # *(0 + 0x602120 * 4 * %rax) = %edx;
+                              # 4 being the number of bytes of an integer
+                              #  and %edx only has integer value higher than 0x3e8
+
+But here, I was stuck for a long time, as I didn’t understand the part I commented with ‘?’ and where this 0x66666667 number was coming from. Luckily, I found an article which explain that it is actually an optimization made by a compiler to perform division without using the division instruction, as it is rather slow. After playing a bit with gdb (such a powerful tool), I came to the conclusion that this part was just a modulo % 20, and checking if the result was 3. So the code of this function in C would result to something like:
+
+int a = 0;
+int  b = 0;
+
+while (b <= 2000) {
+  if (b % 20 == 3 && i > 1000) {
+    array_integer[a] = b;
+    a++;
+  }
+  b++;
+}
+
+Now we come back to our main, with somewhere an array of integer filled. Let’s skip the useless ‘anubis’ and ‘serial’ functions, as well as the printf, scanf and fflush calls, that get the input from the user.
+
+  400d36:       bf 00 21 60 00          mov    $0x602100,%edi # 0x602100 is where the user input -
+  400d3b:       e8 b0 f9 ff ff          callq  4006f0 <strlen@plt> # - is stored
+  400d40:       48 83 f8 15             cmp    $0x15,%rax
+  400d44:       74 05                   je     400d4b <main+0x8a>
+  400d46:       e8 cc fc ff ff          callq  400a17 <hades>
+
+We can see here that, unless the serial entered is 0x15 (21) characters long, it will call the function hades. This function is just a call to puts(“your serial is invalid”); exit(1);. So we know that our serial must be 21 char long, and we should keep that in mind for the keygen.
+
+Then, we have this piece of code. I’ll comment it to explain (user is the string in memory that the actual user entered):
+
+  400d52:       c6 45 f4 00             movb   $0x0,-0xc(%rbp)       # str[4] = 0
+  400d56:       0f b6 05 a6 13 20 00    movzbl 0x2013a6(%rip),%eax   # 602103 <user+0x3> 
+  400d5d:       88 45 f0                mov    %al,-0x10(%rbp)       # str[0] = user[3];
+  400d60:       0f b6 05 9d 13 20 00    movzbl 0x20139d(%rip),%eax   # 602104 <user+0x4>
+  400d67:       88 45 f1                mov    %al,-0xf(%rbp)        # str[1] = user[4];
+  400d6a:       0f b6 05 94 13 20 00    movzbl 0x201394(%rip),%eax   # 602105 <user+0x5>
+  400d71:       88 45 f2                mov    %al,-0xe(%rbp)        # str[2] = user[5];
+  400d74:       0f b6 05 8b 13 20 00    movzbl 0x20138b(%rip),%eax   # 602106 <user+0x6>
+  400d7b:       88 45 f3                mov    %al,-0xd(%rbp)        # str[3] = user[6]
+  400d7e:       48 8d 45 f0             lea    -0x10(%rbp),%rax      
+  400d82:       48 89 c7                mov    %rax,%rdi      
+  400d85:       e8 d6 f9 ff ff          callq  400760 <atoi@plt>     # num = atoi(str);
+  400d8a:       89 45 ec                mov    %eax,-0x14(%rbp)
+  400d8d:       c7 45 e4 00 00 00 00    movl   $0x0,-0x1c(%rbp)      # i = 0;
+  400d94:       eb 25                   jmp    400dbb <main+0xfa>
+  400d96:       8b 45 e4                mov    -0x1c(%rbp),%eax
+  400d99:       48 98                   cltq
+  400d9b:       8b 04 85 20 21 60 00    mov    0x602120(,%rax,4),%eax
+  400da2:       3b 45 ec                cmp    -0x14(%rbp),%eax     # if (array_integer[i] != num)
+  400da5:       75 09                   jne    400db0 <main+0xef>   #     jump at 400db0
+  400da7:       c7 45 e0 01 00 00 00    movl   $0x1,-0x20(%rbp)     # flag = 1;
+  400dae:       eb 11                   jmp    400dc1 <main+0x100>
+  400db0:       c7 45 e0 00 00 00 00    movl   $0x0,-0x20(%rbp)     # flag = 0  
+  400db7:       83 45 e4 01             addl   $0x1,-0x1c(%rbp)     # i++;
+  400dbb:       83 7d e4 31             cmpl   $0x31,-0x1c(%rbp)    # if (i <= 0x31 (49))
+  400dbf:       7e d5                   jle    400d96 <main+0xd5>   #    jump at 400d96
+  400dc1:       83 7d e0 01             cmpl   $0x1,-0x20(%rbp)     # if (flag != 1)
+  400dc5:       74 05                   je     400dcc <main+0x10b>  #   call hades (exit)
+  400dc7:       e8 4b fc ff ff          callq  400a17 <hades>
+  400dcc:       8b 45 ec                mov    -0x14(%rbp),%eax
+  400dcf:       89 c7                   mov    %eax,%edi
+  400dd1:       e8 57 fd ff ff          callq  400b2d <pepper>      # call pepper(num)
+
+That’s all for the main, after that, it exits the function. So let’s translate this code in C, to be more clear:
+
+int i = 0, flag = 0, num;
+
+str[4] = 0;
+str[0] = user[3];
+str[1] = user[4];
+str[2] = user[5];
+str[3] = user[6];
+
+num = atoi(str);
+
+while (i < 49) {
+      if (array_integer[i] == num) {
+      	 flag = 1;
+         break;
+      }
+  i++;
+}
+
+if (flag == 0)
+   hades(); // -> exit
+pepper(num);
+
+Okay, our future key should have a number from the 4th to the 7th character, that would be equal to one of the number in the array_integer. So basicaly, this number should be < 2000, > 1000 and his modulo 20 should be equal to 3. Another rule for our keygen.
+
+What about the pepper function now? It starts with that:
+
+400b47:       0f b6 05 bc 15 20 00    movzbl 0x2015bc(%rip),%eax   # 60210a <user+0xa>
+400b4e:       3c 58                   cmp    $0x58,%al             # if (user[10] == 0x58) // 'X'
+400b50:       74 05                   je     400b57 <pepper+0x2a>  #    jmp 400b57
+400b52:       e8 c0 fe ff ff          callq  400a17 <hades>        # else call hades and quits
+400b57:       8b 4d bc                mov    -0x44(%rbp),%ecx
+
+It’s pretty straightforward, we will need to have the letter ‘X’ at the 11th char. Afterwards, we fall on the same case as earlier, with the modulo, but this time, we have 0x55555556. After some research with gdb, I came to the conclusion that this time, it was a division by 3:
+
+400b57:       8b 4d bc                mov    -0x44(%rbp),%ecx
+400b5a:       ba 56 55 55 55          mov    $0x55555556,%edx
+400b5f:       89 c8                   mov    %ecx,%eax
+400b61:       f7 ea                   imul   %edx
+400b63:       89 c8                   mov    %ecx,%eax
+400b65:       c1 f8 1f                sar    $0x1f,%eax
+400b68:       29 c2                   sub    %eax,%edx
+400b6a:       89 d0                   mov    %edx,%eax
+400b6c:       83 c0 10                add    $0x10,%eax
+400b6f:       01 c0                   add    %eax,%eax
+400b71:       89 45 cc                mov    %eax,-0x34(%rbp)
+400b74:       81 7d cc e7 03 00 00    cmpl   $0x3e7,-0x34(%rbp)
+400b7b:       7f 20                   jg     400b9d <pepper+0x70>
+400b7d:       8b 4d bc                mov    -0x44(%rbp),%ecx
+400b80:       ba 56 55 55 55          mov    $0x55555556,%edx
+400b85:       89 c8                   mov    %ecx,%eax
+400b87:       f7 ea                   imul   %edx
+400b89:       89 c8                   mov    %ecx,%eax
+400b8b:       c1 f8 1f                sar    $0x1f,%eax
+400b8e:       29 c2                   sub    %eax,%edx
+400b90:       89 d0                   mov    %edx,%eax
+400b92:       c1 e0 03                shl    $0x3,%eax
+400b95:       29 d0                   sub    %edx,%eax
+400b97:       83 c0 2a                add    $0x2a,%eax
+400b9a:       89 45 cc                mov    %eax,-0x34(%rbp)
+
+In -0x44(%rbp), the first argument so the result of atoi was stored. If we know about the divisions, it’s quite easy to translate this code in C (with num being the first argument):
+
+int a;
+
+a = (num / 3 + 0x10) * 2;
+if (a < 999) {
+   a = num / 3;
+   a = a * 8 - a + 0x2a;
+}
+
+Then follows this piece of code:
+
+400b9d:       8b 55 cc                mov    -0x34(%rbp),%edx
+400ba0:       48 8d 45 d0             lea    -0x30(%rbp),%rax
+400ba4:       be aa 0f 40 00          mov    $0x400faa,%esi
+400ba9:       48 89 c7                mov    %rax,%rdi
+400bac:       b8 00 00 00 00          mov    $0x0,%eax
+400bb1:       e8 ca fb ff ff          callq  400780 <sprintf@plt>
+
+Somehow, I can’t find the string they try to access at 0x400faa. Let’s try with gdb
+$> gdb crackme02_64bit
+(gdb) b *0x400bac
+Breakpoint 1 at 0x400bac
+(gdb) run
+Please enter your serial: 0001023012X3456789123
+
+Breakpoint 1, 0x0000000000400bac in pepper ()
+(gdb) x/s $esi
+0x400faa:       "%d"
+
+Hm, it was just a simple %d, so the call to printf will just transform the number back into a string. This string is stored on the stack it seems.
+
+The last code of this function is the following:
+
+400bb6:       c7 45 e0 00 00 00 00    movl   $0x0,-0x20(%rbp)
+400bbd:       66 c7 45 e4 00 00       movw   $0x0,-0x1c(%rbp)
+400bc3:       0f b6 45 d3             movzbl -0x2d(%rbp),%eax
+400bc7:       88 45 e0                mov    %al,-0x20(%rbp)
+400bca:       0f b6 45 d2             movzbl -0x2e(%rbp),%eax
+400bce:       88 45 e1                mov    %al,-0x1f(%rbp)
+400bd1:       c6 45 e2 58             movb   $0x58,-0x1e(%rbp)
+400bd5:       0f b6 45 d1             movzbl -0x2f(%rbp),%eax
+400bd9:       88 45 e3                mov    %al,-0x1d(%rbp)
+400bdc:       0f b6 45 d0             movzbl -0x30(%rbp),%eax
+400be0:       88 45 e4                mov    %al,-0x1c(%rbp)
+400be3:       c7 45 f0 00 00 00 00    movl   $0x0,-0x10(%rbp)
+400be3:       c7 45 f0 00 00 00 00    movl   $0x0,-0x10(%rbp)
+400bea:       66 c7 45 f4 00 00       movw   $0x0,-0xc(%rbp)
+400bf0:       0f b6 05 11 15 20 00    movzbl 0x201511(%rip),%eax        # 602108 <user+0x8>
+400bf7:       88 45 f0                mov    %al,-0x10(%rbp)
+400bfa:       0f b6 05 08 15 20 00    movzbl 0x201508(%rip),%eax        # 602109 <user+0x9>
+400c01:       88 45 f1                mov    %al,-0xf(%rbp)
+400c04:       0f b6 05 ff 14 20 00    movzbl 0x2014ff(%rip),%eax        # 60210a <user+0xa>
+400c0b:       88 45 f2                mov    %al,-0xe(%rbp)
+400c0e:       0f b6 05 f6 14 20 00    movzbl 0x2014f6(%rip),%eax        # 60210b <user+0xb>
+400c15:       88 45 f3                mov    %al,-0xd(%rbp)
+400c18:       0f b6 05 ed 14 20 00    movzbl 0x2014ed(%rip),%eax        # 60210c <user+0xc>
+400c1f:       88 45 f4                mov    %al,-0xc(%rbp)
+400c22:       48 8d 55 e0             lea    -0x20(%rbp),%rdx
+400c26:       48 8d 45 f0             lea    -0x10(%rbp),%rax
+400c2a:       48 89 d6                mov    %rdx,%rsi
+400c2d:       48 89 c7                mov    %rax,%rdi
+400c30:       e8 fb fa ff ff          callq  400730 <strcmp@plt>
+400c35:       85 c0                   test   %eax,%eax
+400c37:       74 05                   je     400c3e <pepper+0x111>
+400c39:       e8 d9 fd ff ff          callq  400a17 <hades>
+400c3e:       e8 68 fe ff ff          callq  400aab <gaia>
+
+It’s doing quite a lot of mov here … But it seems that it is only creating two strings on the stack, from two previous other strings, the user one, and the one created with sprintf, and a character ‘X’. It then proceeds to compare them, and if they are equal, calls gaia, otherwise calls hades.
+
+So, to resume the ‘pepper’ function, let’s translate in C (with num = the 1st argument, and user = the input from the user):
+
+int a;
+char s[6];
+char num_str[5];
+char buff[6];
+
+
+a = (num / 3 + 0x10) * 2;
+if (a < 999) {
+   a = num / 3;
+   a = a * 8 - a + 0x2a;
+}
+
+sprintf(num_str, "%d", a);
+
+s[0] = num_str[3];
+s[1] = num_str[2];
+s[2] = 'X';
+s[3] = num_str[1];
+s[4] = num_str[0];
+s[5] = 0;
+
+strncpy(buff, user + 8, 5);
+buff[5] = 0;
+
+if (strcmp(buff, s) != 0)
+   hades();
+gaia();
+
+Here is a rule we will have to follow as well. Once again, there is another function to understand and this time it is called gaia. Sounds more positive than hades and pepper/salt! Let’s check the code our earth has to offer:
+
+400ac2:       c7 45 f0 00 00 00 00    movl   $0x0,-0x10(%rbp)
+400ac9:       c6 45 f4 00             movb   $0x0,-0xc(%rbp)
+400acd:       0f b6 05 3a 16 20 00    movzbl 0x20163a(%rip),%eax        # 60210e <user+0xe>
+400ad4:       88 45 f0                mov    %al,-0x10(%rbp)
+400ad7:       0f b6 05 31 16 20 00    movzbl 0x201631(%rip),%eax        # 60210f <user+0xf>
+400ade:       88 45 f1                mov    %al,-0xf(%rbp)
+400ae1:       0f b6 05 28 16 20 00    movzbl 0x201628(%rip),%eax        # 602110 <user+0x10>
+400ae8:       88 45 f2                mov    %al,-0xe(%rbp)
+400aeb:       0f b6 05 1f 16 20 00    movzbl 0x20161f(%rip),%eax        # 602111 <user+0x11>
+400af2:       88 45 f3                mov    %al,-0xd(%rbp)
+400af5:       0f b6 55 f0             movzbl -0x10(%rbp),%edx
+400af9:       0f b6 45 f2             movzbl -0xe(%rbp),%eax
+400afd:       38 c2                   cmp    %al,%dl
+400aff:       7f 0c                   jg     400b0d <gaia+0x62>
+400b01:       0f b6 55 f3             movzbl -0xd(%rbp),%edx
+400b05:       0f b6 45 f1             movzbl -0xf(%rbp),%eax
+400b09:       38 c2                   cmp    %al,%dl
+400b0b:       7d 05                   jge    400b12 <gaia+0x67>
+400b0d:       e8 05 ff ff ff          callq  400a17 <hades>
+400b12:       e8 18 ff ff ff          callq  400a2f <Thor>
+
+This function also compare the user input, but this time, it checks if the 15th character is smaller than the 17th and if the 16th is greater or equal to the 18th. If yes, it calls thor, otherwise hades. In C, it would be:
+
+if (user[14] <= user[16] && user[15] <= user[17])
+  thor();
+hades();
+
+And now, we are the function Thor(), with a big T! And it seems to be the last one, yay! Thor has this code at first:
+
+400a37:       0f b6 05 d4 16 20 00    movzbl 0x2016d4(%rip),%eax        # 602112 <user+0x12>
+400a3e:       3c 2d                   cmp    $0x2d,%al
+400a40:       75 16                   jne    400a58 <Thor+0x29>
+400a42:       0f b6 05 ca 16 20 00    movzbl 0x2016ca(%rip),%eax        # 602113 <user+0x13>
+400a49:       3c 64                   cmp    $0x64,%al
+400a4b:       75 0b                   jne    400a58 <Thor+0x29>
+400a4d:       0f b6 05 c0 16 20 00    movzbl 0x2016c0(%rip),%eax        # 602114 <user+0x14>
+400a54:       3c 61                   cmp    $0x61,%al
+400a56:       74 05                   je     400a5d <Thor+0x2e>
+400a58:       e8 ba ff ff ff          callq  400a17 <hades>
+
+We can analyse here three rules: the 19th character should be a ‘-‘, the 20th a ‘d’ and the 21st a ‘a’ otherwise, we are back to hades!
+
+and the last piece of code is:
+
+400a5d:       c7 45 fc 00 00 00 00    movl   $0x0,-0x4(%rbp)
+400a64:       eb 33                   jmp    400a99 <Thor+0x6a>
+400a66:       8b 45 fc                mov    -0x4(%rbp),%eax
+400a69:       48 98                   cltq
+400a6b:       0f b6 80 9c 20 60 00    movzbl 0x60209c(%rax),%eax
+400a72:       0f be d0                movsbl %al,%edx
+400a75:       8b 45 fc                mov    -0x4(%rbp),%eax
+400a78:       48 98                   cltq
+400a7a:       0f b6 80 90 20 60 00    movzbl 0x602090(%rax),%eax
+400a81:       0f be c0                movsbl %al,%eax
+400a84:       89 c6                   mov    %eax,%esi
+400a86:       bf a5 0f 40 00          mov    $0x400fa5,%edi
+400a8b:       b8 00 00 00 00          mov    $0x0,%eax
+400a90:       e8 7b fc ff ff          callq  400710 <printf@plt>
+400a95:       83 45 fc 01             addl   $0x1,-0x4(%rbp)
+400a99:       83 7d fc 0a             cmpl   $0xa,-0x4(%rbp)
+400a9d:       7e c7                   jle    400a66 <Thor+0x37>
+400a9f:       bf 0a 00 00 00          mov    $0xa,%edi
+400aa4:       e8 27 fc ff ff          callq  4006d0 <putchar@plt>
+
+It seems strange at first, but it is actually just an ‘obfuscated’ way to print the following message: ‘Good job you made it!\n’ from the two following strings:
+
+0x602090 Go o o aei!
+0x60209c odjbyumd t
+
+Now, I crafted a key from the all the rules we gathered, and let’s try the crackme with it:
+
+$> ./crackme02_64bit
+        ************************
+        *      Welcome to      *
+        *      Crackme 02      *
+        *----------------------*
+        * Rules:               *
+        *                      *
+        * 1. No Patching       *
+        * 2. write a keygen    *
+        *----------------------*
+        *      Good luck!      *
+        ************************
+Please enter your serial: 0001023092X4201839-da
+Good job you made it!
+
+The last step is the creation of the keygen. 
+Here is the code for the keygen (python):
+
+import random
+from math import floor
+
+# create a list where there is all the number from 1000 to 2000
+# whose % 20 == 3
+list_integer = [x for x in range(1000, 2000) if x % 20 == 3]
+
+# take a random number from this list
+number = random.choice(list_integer)
+key = [chr(random.randrange(33, 126)) for x in range(3)]
+key.extend([int(x) for x in str(number)])
+key.append(chr(random.randrange(33, 126)))
+
+#same algo as the pepper function in the crackme
+a = (floor(number / 3) + 16) * 2;
+if a < 999:
+    a = floor(number / 3);
+    a = a * 8 - a + 42;
+num_str = [int(x) for x in str(a)]
+s = [num_str[3], num_str[2], 'X', num_str[1], num_str[0]]
+key.extend(s)
+
+# gaia algo
+key.append(chr(random.randrange(33, 126)))
+num = random.randrange(34, 126)
+key.append(chr(random.randrange(33, num)))
+s_num = random.randrange(34, 126)
+key.append(chr(random.randrange(33, s_num)))
+key.append(chr(num))
+key.append(chr(s_num))
+
+# Thor algo
+key.extend(['-', 'd', 'a'])
+
+final_key = ""
+for i in key:
+    try:
+        final_key += i
+    except TypeError:
+        final_key += str(i)
+print(final_key)
+
+Let’s test it a bit, at least 5 times:
+
+$> ./crackme02_64bit <<< "$(echo `python3.3 keygen.py | tee -a keys`)"
+        ************************
+        *      Welcome to      *
+        *      Crackme 02      *
+        *----------------------*
+        * Rules:               *
+        *                      *
+        * 1. No Patching       *
+        * 2. write a keygen    *
+        *----------------------*
+        *      Good luck!      *
+        ************************
+Please enter your serial: Good job you made it!
+$> ./crackme02_64bit <<< "$(echo `python3.3 keygen.py | tee -a keys`)"
+        ************************
+        *      Welcome to      *
+        *      Crackme 02      *
+        *----------------------*
+        * Rules:               *
+        *                      *
+        * 1. No Patching       *
+        * 2. write a keygen    *
+        *----------------------*
+        *      Good luck!      *
+        ************************
+Please enter your serial: Good job you made it!
+$> ./crackme02_64bit <<< "$(echo `python3.3 keygen.py | tee -a keys`)"
+        ************************
+        *      Welcome to      *
+        *      Crackme 02      *
+        *----------------------*
+        * Rules:               *
+        *                      *
+        * 1. No Patching       *
+        * 2. write a keygen    *
+        *----------------------*
+        *      Good luck!      *
+        ************************
+Please enter your serial: Good job you made it!
+$> ./crackme02_64bit <<< "$(echo `python3.3 keygen.py | tee -a keys`)"
+        ************************
+        *      Welcome to      *
+        *      Crackme 02      *
+        *----------------------*
+        * Rules:               *
+        *                      *
+        * 1. No Patching       *
+        * 2. write a keygen    *
+        *----------------------*
+        *      Good luck!      *
+        ************************
+Please enter your serial: Good job you made it!
+$> ./crackme02_64bit <<< "$(echo `python3.3 keygen.py | tee -a keys`)"
+        ************************
+        *      Welcome to      *
+        *      Crackme 02      *
+        *----------------------*
+        * Rules:               *
+        *                      *
+        * 1. No Patching       *
+        * 2. write a keygen    *
+        *----------------------*
+        *      Good luck!      *
+        ************************
+Please enter your serial: Good job you made it!
+$> cat keys
+Js!1243404X92x?Pwk-da
+:A11483T02X01N!8"w-da
+s"Y1103@11X62`,!Y"-da
+>\+1563T47X01$^%hO-da
+rgM1203>94X82J/9?Q-da
+

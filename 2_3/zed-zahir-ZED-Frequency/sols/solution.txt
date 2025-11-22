@@ -1,0 +1,195 @@
+This is the decompilation of the program in ghidra:
+
+
+----------------------------------------------------------------------------------
+
+
+
+undefined8 main(int param_1,undefined8 *param_2)
+
+{
+  int iVar1;
+  FILE *__stream;
+  long in_FS_OFFSET;
+  int local_b8;
+  int local_b4;
+  uint auStack168 [28];
+  char local_38 [26];
+  undefined local_1e;
+  long local_10;
+  
+  local_10 = *(long *)(in_FS_OFFSET + 0x28);
+  if (param_1 < 2) {
+    printf("usage: %s <keyfile>\n",*param_2);
+                    /* WARNING: Subroutine does not return */
+    exit(1);
+  }
+  __stream = fopen((char *)param_2[1],"rt");
+  local_b8 = 0;
+  while (local_b8 < 0x1a) {
+    auStack168[local_b8] = 0;
+    local_b8 = local_b8 + 1;
+  }
+  while (iVar1 = fgetc(__stream), iVar1 != -1) {
+    if ((iVar1 < 0x61) || (0x7a < iVar1)) {
+      if ((0x40 < iVar1) && (iVar1 < 0x5b)) {
+        auStack168[iVar1 + -0x41] = auStack168[iVar1 + -0x41] + 1;
+      }
+    }
+    else {
+      auStack168[iVar1 + -0x61] = auStack168[iVar1 + -0x61] + 1;
+    }
+  }
+  printf("the generated key is: ");
+  local_b4 = 0;
+  while (local_b4 < 0x1a) {
+    printf("%d",(ulong)auStack168[local_b4]);
+    local_38[local_b4] = (char)auStack168[local_b4] + '0';
+    local_b4 = local_b4 + 1;
+  }
+  local_1e = 0;
+  putchar(10);
+  iVar1 = strcmp(local_38,"01234567890123456789012345");
+  if (iVar1 == 0) {
+    puts("you succeed!!");
+  }
+  else {
+    puts("you failed!!");
+  }
+  if (local_10 == *(long *)(in_FS_OFFSET + 0x28)) {
+    return 0;
+  }
+                    /* WARNING: Subroutine does not return */
+  __stack_chk_fail();
+}
+
+
+------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+the program just checks how many a characters, b characters etc. there are in the keyfile aka: if you have a keyfile containing "A", then the program will output:
+
+
+
+the generated key is: 10000000000... so it just counts the number of how many characters of each of the characters in the english alphabet there are in the file, so
+
+
+another example is if the keyfile contains "AAAABB" then the generated key is 4200000000....
+
+so yeah.. it just counts the number of each character of the english aplhabet that is in the file. and also if you enter "BBBAAAA" in the keyfile it generates 420000.... so it does not matter what order you put the characters in (like alphabetically).
+
+then after generating the key, the program compares the key to the string "01234567890123456789012345", so using a keyfile which contains the following: "BCCDDDEEEEFFFFFGGGGGGHHHHHHHIIIIIIIIJJJJJJJJJLMMNNNOOOOPPPPPQQQQQQRRRRRRRSSSSSSSSTTTTTTTTTVWWXXXYYYYZZZZZ" solves the crackme.
+
+
+and btw here is the complete c program reversed (well.. almost):
+
+
+#include <stdio.h>
+#include <stdlib.h>
+
+int main()
+{
+   int iVar1;
+   int local_b4;
+   int local_b8;
+   uint auStack168[28];
+   char local_38[26];
+   
+   long local_10;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+   char ch, file_name[25];
+   FILE *fp;
+
+   printf("Enter name of a file you wish to see\n");
+   gets(file_name);
+
+   fp = fopen(file_name, "r"); // read mode
+
+
+
+   local_b8 = 0;
+
+
+
+
+
+   while(local_b8 < 0x1a) {
+      auStack168[local_b8] = 0;
+      local_b8 = local_b8 + 1;
+   }
+
+
+
+
+   while (iVar1 = fgetc(fp), iVar1 != -1) {
+      if ((iVar1 < 0x61) || (0x7a < iVar1)) {
+         if ((0x40 < iVar1) && (iVar1 < 0x5b)) {
+            auStack168[iVar1 - 0x41] = auStack168[iVar1 - 0x41] + 1;
+         }
+      }
+
+      else {
+         auStack168[iVar1 - 0x61] = auStack168[iVar1 - 0x61] + 1;
+      }
+   }
+
+
+
+
+   printf("the generated key is:");
+
+   local_b4 = 0;
+
+
+
+   while (local_b4 < 0x1a) {
+      printf("%d", auStack168[local_b4]);
+      local_38[local_b4] = (char)auStack168[local_b4] + '0';
+      local_b4 = local_b4 + 1;
+   }
+   
+   putchar(10);
+   iVar1 = strcmp(local_38, "01234567890123456789012345");
+   if (iVar1 == 0) {
+      printf("success\n");
+   }
+
+
+
+
+   
+
+   fclose(fp);
+   return 0;
+}
+
+
+
+Thanks for reading.
+
+
+

@@ -1,0 +1,148 @@
+The main function is as follows:
+
+119: int main (int argc, char **argv, char **envp);
+; var int64_t var_20h @ rbp-0x20
+0x00001175      push    rbp
+0x00001176      mov     rbp, rsp
+0x00001179      sub     rsp, 0x20
+
+// cin.getline(var_20h, 0x11) --> var_20h contains INPUT
+0x0000117d      lea     rsi, str.Please_Enter_The_Password: ; 0x2009
+0x00001184      lea     rdi, std::cout ; sym..bss
+                                   ; 0x40a0
+0x0000118b      call    std::basic_ostream<char, std::char_traits<char> >& std::operator<< <std::char_traits<char> >(std::basic_ostream<char, std::char_traits<char> >&, char const*) ; sym.imp.std::basic_ostream_char__std::char_traits_char_____std::operator____std::char_traits_char____std::basic_ostream_char__std::char_traits_char______char_const
+0x00001190      lea     rax, [var_20h]
+0x00001194      mov     edx, 0x11
+0x00001199      mov     rsi, rax
+0x0000119c      lea     rdi, std::cin ; 0x41c0
+0x000011a3      call    std::istream::getline(char*, long) ; sym.imp.std::istream::getline_char___long
+
+// Interesting functions
+0x000011a8      call    xxx()      ; sym.xxx
+0x000011ad      lea     rax, [var_20h]
+0x000011b1      mov     rdi, rax   ; int64_t arg1
+0x000011b4      call    check_password(char*) ; sym.check_password_char
+0x000011b9      test    al, al
+0x000011bb      je      0x11d2
+
+// RIGHT PASSWORD
+0x000011bd      lea     rsi, str.Correct_You_Cracked_It ; 0x2028
+0x000011c4      lea     rdi, std::cout ; sym..bss
+                                   ; 0x40a0
+0x000011cb      call    std::basic_ostream<char, std::char_traits<char> >& std::operator<< <std::char_traits<char> >(std::basic_ostream<char, std::char_traits<char> >&, char const*) ; sym.imp.std::basic_ostream_char__std::char_traits_char_____std::operator____std::char_traits_char____std::basic_ostream_char__std::char_traits_char______char_const
+0x000011d0      jmp     0x11e5
+
+// WRONG PASSWORD
+0x000011d2      lea     rsi, str.Wrong ; 0x2048
+0x000011d9      lea     rdi, std::cout ; sym..bss
+                                   ; 0x40a0
+0x000011e0      call    std::basic_ostream<char, std::char_traits<char> >& std::operator<< <std::char_traits<char> >(std::basic_ostream<char, std::char_traits<char> >&, char const*) ; sym.imp.std::basic_ostream_char__std::char_traits_char_____std::operator____std::char_traits_char____std::basic_ostream_char__std::char_traits_char______char_const
+0x000011e5      mov     eax, 0
+0x000011ea      leave
+0x000011eb      ret
+
+--> We see that we are storing user input into var_20h (max 0x11=17 characters). THis is followed by a call to xxx(), and subsequently a call for check_password(var_20h) != 0 for the right password. Lets take a look at check_password() first as follows:
+
+sym.check_password_char (int64_t arg1);
+; var int64_t var_18h @ rbp-0x18
+; var signed int64_t var_4h @ rbp-0x4
+; arg int64_t arg1 @ rdi
+0x000011ec      push    rbp
+0x000011ed      mov     rbp, rsp
+0x000011f0      mov     qword [var_18h], rdi 	; arg1 = USER INPUT
+
+0x000011f4      mov     dword [var_4h], 0		; var_4h = counter?
+0x000011fb      cmp     dword [var_4h], 0xf		; counter < 0xf --> USER INPUT max 16 char
+0x000011ff      jg      0x1232					; Take this path
+
+0x00001201      mov     eax, dword [var_4h]		
+0x00001204      movsxd  rdx, eax
+0x00001207      mov     rax, qword [var_18h]
+0x0000120b      add     rax, rdx				
+0x0000120e      movzx   edx, byte [rax]			; edx = char at USER_INPUT[counter]
+
+0x00001211      mov     eax, dword [var_4h]
+0x00001214      cdqe
+0x00001216      lea     rcx, pass  ; 0x42e0		
+0x0000121d      movzx   eax, byte [rax + rcx]	; eax = char at pass[counter]
+
+0x00001221      cmp     dl, al					; Check if USER_INPUT[counter] == pass[counter]
+0x00001223      je      0x122c					; Take this path
+
+0x00001225      mov     eax, 0					; Avoid this path
+0x0000122a      jmp     0x1237
+
+0x0000122c      add     dword [var_4h], 1		; Increment counter (var_4h) by 1
+0x00001230      jmp     0x11fb
+
+0x00001232      mov     eax, 1
+0x00001237      pop     rbp
+0x00001238      ret
+
+--> For check_password(), we can see that we are looking for a 16-character password that equals the pass variable at 0x42e0. We now analyze xxx() which likely tells us what is in pass (our desired user input):
+
+179: sym.xxx ();
+0x00001297      push    rbp
+0x00001298      mov     rbp, rsp
+
+// pass = key3 = "is"
+0x0000129b      lea     rsi, key3  ; 0x405b ; const char *s2
+0x000012a2      lea     rdi, pass  ; 0x42e0 ; char *s1
+0x000012a9      call    strcat     ; sym.imp.strcat ; char *strcat(char *s1, const char *s2)
+
+// Operation #1
+0x000012ae      lea     rax, pass  ; 0x42e0
+0x000012b5      mov     rcx, 0xffffffffffffffff
+0x000012bc      mov     rdx, rax
+0x000012bf      mov     eax, 0
+0x000012c4      mov     rdi, rdx					; rdi = pass
+0x000012c7      repne   scasb al, byte [rdi]		; scan until null character (end of string)
+
+0x000012c9      mov     rax, rcx
+0x000012cc      not     rax
+0x000012cf      lea     rdx, [rax - 1]				; rdx = index to put next character
+0x000012d3      lea     rax, pass  ; 0x42e0
+0x000012da      add     rax, rdx					; rax = pass[rdx]
+
+0x000012dd      mov     word [rax], 0x4141 ; 'AA'	; pass = "isAA"
+0x000012e2      mov     byte [rax + 2], 0			; pass = "isAA\0"
+// End of Operation #1
+
+// pass = "isAA" + "this"
+0x000012e6      lea     rsi, key2  ; 0x4056 ; const char *s2
+0x000012ed      lea     rdi, pass  ; 0x42e0 ; char *s1
+0x000012f4      call    strcat     ; sym.imp.strcat ; char *strcat(char *s1, const char *s2)
+
+// pass = "isAAthis" + "Fun"
+0x000012f9      lea     rsi, key9  ; 0x407f ; const char *s2
+0x00001300      lea     rdi, pass  ; 0x42e0 ; char *s1
+0x00001307      call    strcat     ; sym.imp.strcat ; char *strcat(char *s1, const char *s2)
+
+// Operation #2
+0x0000130c      lea     rax, pass  ; 0x42e0
+0x00001313      mov     rcx, 0xffffffffffffffff
+0x0000131a      mov     rdx, rax
+0x0000131d      mov     eax, 0
+0x00001322      mov     rdi, rdx
+0x00001325      repne   scasb al, byte [rdi] 		; scan until null character (end of string)
+
+0x00001327      mov     rax, rcx
+0x0000132a      not     rax
+0x0000132d      lea     rdx, [rax - 1]				; rdx = index to put next character
+0x00001331      lea     rax, pass  ; 0x42e0
+0x00001338      add     rax, rdx					; rax = pass[rdx]
+
+0x0000133b      mov     dword [rax], 0x43434242 ; 'BBCC' 	pass = "isAAthisFunBBCC"
+0x00001341      mov     word [rax + 4], 0x44 ; rflags	 	pass = "isAAthisFunBBCCD"
+// End of Operation #2
+
+0x00001347      nop
+0x00001348      pop     rbp
+0x00001349      ret
+
+A deeper analysis into xxx() shows that eventually, pass is a concatenation of:
+- "is" + "AA" + "this" + "Fun" + "BBCC" + D = "isAAthisFunBBCCD", a 16-char string that matches our description. - Testing isAAthisFunBBCCD as password input works as expected.
+
+
+
+

@@ -1,0 +1,123 @@
+https://crackmes.one/crackme/5dce805c33c5d419aa0131ae
+
+Short solution:
+./half-twins 11112345 11116789
+Abby & Gabby: yaayy!! nice job! :D
+
+Full solution:
+1. GDB
+2. 0x0000555555555164 <+27>:	cmp    DWORD PTR [rbp-0x44],0x3
+3. if argc != 3 => fail
+4. else we will get message "Abby & Gabby: we are not \"odd\" years old :("
+5. Lets use Ghydra to decompile the code and analyse it(some variable names are changed for better understanding):
+
+undefined8 main(int argc,long argv)
+
+{
+  long arg1;
+  long arg2;
+  uint lllen_arg1;
+  int llllen_arg1;
+  ulong len_arg1;
+  long llen_arg1;
+  long llen_arg2;
+  int iStack60;
+  
+  if (argc == 3) {
+    arg1 = *(long *)(argv + 8);
+    arg2 = *(long *)(argv + 0x10);
+    len_arg1 = strlen(arg1);
+    if (len_arg1 < 7) {
+      puts("Abby: i\'m older than that :(");
+      puts("good luck next time");
+    }
+    else {
+      len_arg1 = strlen(arg2);
+      if (len_arg1 < 7) {
+        puts("Gabby: i\'m older than that :(");
+        puts("good luck next time");
+      }
+      else {
+        llen_arg1 = strlen(arg1);
+        llen_arg2 = strlen(arg2);
+        if (llen_arg1 == llen_arg2) {
+          lllen_arg1 = strlen(arg1);
+          if ((lllen_arg1 & 1) == 0) {
+            len_arg1 = strlen(arg1);
+            iStack60 = 0;
+            while (iStack60 < (int)(len_arg1 >> 1)) {
+              if (*(char *)(arg1 + iStack60) != *(char *)(arg2 + iStack60)) {
+                puts("Abby & Gabby: we\'re half twins you know...");
+                puts("good luck next time");
+                return 0;
+              }
+              iStack60 = iStack60 + 1;
+            }
+            llllen_arg1 = strlen(arg1);
+            while (iStack60 < llllen_arg1) {
+              if (*(char *)(arg1 + iStack60) == *(char *)(arg2 + iStack60)) {
+                puts("Abby & Gabby: we are only HALF twins... :3 ");
+                puts("good luck next time");
+                return 0;
+              }
+              iStack60 = iStack60 + 1;
+            }
+            puts("Abby & Gabby: yaayy!! nice job! :D");
+          }
+          else {
+            puts("Abby & Gabby: we are not \"odd\" years old :(");
+            puts("good luck next time");
+          }
+        }
+        else {
+          puts("Abby & Gabby: for god\'s sake we are TWINS! we were born the same night!!");
+          puts("good luck next time");
+        }
+      }
+    }
+  }
+  else {
+    puts("hmm... i\'m not sure you know what the word \"twins\" mean :/");
+    puts("good luck next time");
+  }
+  return 0;
+}
+
+
+Analisys:
+1. If argc != 3 -> fail
+2. If len(first) < 7 or len(second) < 7 -> fail
+3. If len(first) != len(second) -> fail
+4. If len & 1 != 0 -> fail (valid length can be 8 for example)
+5. Let's analyse the internal loop
+        len_arg1 = strlen(arg1);                                            
+        iStack60 = 0;                                                       
+
+        while (iStack60 < (int)(len_arg1 >> 1)) {                           
+          if (*(char *)(arg1 + iStack60) != *(char *)(arg2 + iStack60)) {   
+            puts("Abby & Gabby: we\'re half twins you know...");            
+            puts("good luck next time");                                    
+            return 0;                                                       
+          }                                                                 
+          iStack60 = iStack60 + 1;                                          
+        }                                                                   
+
+        llllen_arg1 = strlen(arg1);                                         
+        while (iStack60 < llllen_arg1) {                                    
+          if (*(char *)(arg1 + iStack60) == *(char *)(arg2 + iStack60)) {   
+            puts("Abby & Gabby: we are only HALF twins... :3 ");            
+            puts("good luck next time");                                    
+            return 0;                                                       
+          }                                                                 
+          iStack60 = iStack60 + 1;                                          
+        }                                                                   
+        puts("Abby & Gabby: yaayy!! nice job! :D");
+6. In first while loop we compare (len >> 1 = 8/2 = 4) characters, they should be equal
+7. In second while loop we compare last 4 characters, they should not be equal
+
+Result:
+./half-twins 11112345 11116789                                                  
+Abby & Gabby: yaayy!! nice job! :D
+ % ./half-twins 11111111zxcvbnm, 11111111asdfghjk
+Abby & Gabby: yaayy!! nice job! :D
+

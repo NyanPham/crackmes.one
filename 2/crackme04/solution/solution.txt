@@ -1,0 +1,86 @@
+First thing to note on this binary is if you run it it will delete itself. The fail function is shown below:
+
+.text:08048908 push    ebp
+.text:08048909 mov     ebp, esp
+.text:0804890B sub     esp, 18h
+.text:0804890E mov     dword ptr [esp], offset aYouLose ; "YOU LOSE!"
+.text:08048915 call    _puts
+.text:0804891A mov     eax, [ebp+filename]
+.text:0804891D mov     [esp], eax      ; filename
+.text:08048920 call    _remove
+.text:08048925 mov     dword ptr [esp], 1 ; status
+.text:0804892C call    _exit
+
+As you can see there is a call to remove. I patched out this call to be able to test the binary without continually copying it over.
+
+While you have your hex editor out it is also useful to patch a few other things out, mainly the equality checks for time and pid. Since I didnt want to change my clock time and it is difficult to predetermine a pid I patched out the two checks shown below.
+
+                 dword ptr [esp+4], offset s2 ; "13:37"
+.text:0804875F   lea     eax, [esp+56Ch+currentTime]
+.text:08048763   mov     [esp], eax      ; s1
+.text:08048766   call    _strcmp
+.text:0804876B   test    eax, eax
+.text:0804876D   jz
+
+and check 2
+
+.text:0804877D cmp     [esp+56Ch+pid_value], 1337
+.text:08048785 jz      short loc_8048795
+
+so with those patched we can continue on.
+
+Next we get to an area loading a bunch of constants in, then entering into a loop.
+
+.text:08048795
+.text:08048795 loc_8048795:
+.text:08048795 mov     dword ptr [esp+1Ch], 218232
+.text:0804879D mov     [esp+56Ch+constant], offset a7030726e ; "7030726e"
+.text:080487A5 mov     [esp+56Ch+counter], 0
+.text:080487AD jmp     loc_804885F
+
+The interesting thing to notice here is when it breaks from the loop it will be go into a strcmp. Knowing the values for strcmp must be placed onto the stack this means the value our string will be compared against, will be placed on the stack. So setting a breakpoint on our patched binary we will easily be able to see the string compared. Looking through the calculation function the one variable to the whole equation is our pid. So as our pid changes so will the value compared against.
+
+Check it out below
+
+.text:080487CD                 mov     [esp+56Ch+peach], eax
+.text:080487D1                 mov     edx, [esp+56Ch+pear]
+.text:080487D5                 mov     eax, [esp+56Ch+pid_value]
+.text:080487D9                 xor     eax, edx
+
+So with the answer dependent on pid and the fact we patched out the 1337 call earlier we now know that with a pid of 1337 there will only be one solution. This is great so we now calculate out the solution for the 1337 pid and write a simple script to check the pid for us and if it is 1337 continue on enter the solution and win! You may think about the time check at the beginning but because the time is never used again as a variable simply setting time to 1337 and running this will still work!
+
+
+Note: I did all my patching and testing on the 64 bit version but all should work just as well on the 32 bit version.
+
+So in gdb running this with a pid 1337 will get us the answer:
+
+-=[ CrackMe #4 ]=-
+Please enter your serial: 217552398261569-545326772-1082328767-1082328760-1082328765-1082328753
+YOU WIN!
+
+Now for a simple python script to test our pid:
+
+   import subprocess
+   #set time to 13:37
+   subprocess.Popen('date +%T -s "13:37:00"', stdin = subprocess.PIPE, stdout = subprocess.PIPE)
+   while(1):
+  	  #open new process and check PID
+  >...sp = subprocess.Popen('./potential', stdin = subprocess.PIPE, stdout = subprocess.PIPE)
+  >...print str(sp.pid)
+  >...if sp.pid == 1337:
+  >...>...print "OMG"
+  >...>...print sp.communicate(input="217552398261569-545326772-1082328767-1082328760-1082328765-1082328753")
+  >...>...exit()
+  >...
+
+ On my machine you can have upwards of 60000 pids so this may not be super practical and hard patching it to always be 1337 may be a better alternative. So running the script a few times till pid is in range we get:
+
+ 1335
+ 1336
+ 1337
+ OMG
+ ('-=[ CrackMe #4 ]=-\nPlease enter your serial: YOU WIN!\n', None)
+
+
+
+

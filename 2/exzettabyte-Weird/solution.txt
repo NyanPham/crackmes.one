@@ -1,0 +1,35 @@
+The crackme is packed with UPX, so first we have to unpack the binary by issuing the command
+
+root#> upd -d weird
+
+after unpacking, open the binary in radare2, and seek to main
+
+> s main
+> pdf
+
+╭ 27: main ();
+│           0x00401ddb 00:0000      f30f1efa       endbr64
+│           0x00401ddf 00:0000      55             push rbp
+│           0x00401de0 00:0000      4889e5         mov rbp, rsp
+│           0x00401de3 00:0000      488d3d253209.  lea rdi, str.Something_weird ; 0x49500f ; "Something weird"
+│           0x00401dea 00:0000      e816ffffff     call puts
+│           0x00401def 00:0000      b800000000     mov eax, 0
+│           0x00401df4 00:0000      5d             pop rbp
+╰           0x00401df5 00:0000      c3             ret
+
+It just calls puts with "Something weird" and exits. Looking for all the functions with `afl` command in radare2 we can
+see a `secret` function defined but never called. So all I did was patched the call to puts, so that it calls the secret
+funtion.
+
+root$> r2 -w weird
+r2> s main
+r2> s 0x00401dea
+r2> V!
+r2> A
+r2> call sym.secret
+r2> Enter
+r2> q
+and ran the binary.
+
+Flag : flag{9aec9b0277379453e49889427efe7e7b}
+

@@ -1,0 +1,23 @@
+The string used for comparison with the input will use the path of the
+executable file. That is, the first string of argc is used.
+
+Therefore, the string to be input changes depending on whether you specify an
+absolute path of a relative path at execution time.
+
+In any case, the first, fourth and fifth characters of the string are used to
+compare with the input.
+
+if you enter a relative path and did not change the file name, the string used
+for comparison with the input will be "c0ck".
+
+if you enter an absolute path (this likely to happen unintentionally on gdb),
+it is very environment dependent, but assuming you are running in your home
+directory, in will be about "/0o*" (* will be a char such as the first
+charactor of the username).
+
+You can also change the string to compare by changing the file name.
+For example, if you change "crackMe-by-m00ny-1" to "AAAAAAA-by-m00ny-1", the string will be "A0AA".
+Keep thi file name long enough because there is a mechanism to check the
+length of the file name.
+
+flag is 8B7535B74BC2FE3BA12B6374CFC8259 .

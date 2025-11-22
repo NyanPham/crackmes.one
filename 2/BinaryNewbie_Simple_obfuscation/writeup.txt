@@ -1,0 +1,286 @@
+The challenge is presented with the following description:
+
+A simple crackme, with some obfuscation and a simple anti debug trick. Patch isn't allowed. The difficulty could be easy or medium.
+I'm waiting for solutions and comments, have fun.
+
+Running 'rabin2 -I' against the binary gives this information:
+
+arch     x86
+baddr    0x400000
+binsz    763232
+bintype  elf
+bits     64
+canary   false
+class    ELF64
+compiler GCC: (Ubuntu 8.3.0-6ubuntu1) 8.3.0
+crypto   false
+endian   little
+havecode true
+laddr    0x0
+lang     c
+linenum  false
+lsyms    false
+machine  AMD x86-64 architecture
+maxopsz  16
+minopsz  1
+nx       true
+os       linux
+pcalign  0
+pic      false
+relocs   false
+rpath    NONE
+sanitiz  false
+static   true
+stripped true
+subsys   linux
+va       true
+
+Looking at this I would guess that the simple obfuscation is the fact that the binary is stripped but also statically linked, this means that there isn't going to be any information that can be gathered from the
+imports. There is however some useful information stored as static string data in the binary, I dumped this with 'rabin -z' this is only the output after piping into the 'head' command as there was many
+irrelevant strings.
+
+[Strings]
+nth  paddr      vaddr      len size section type    string
+――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+0    0x00090004 0x00490004 11  12   .rodata ascii   Cracked....
+1    0x00090010 0x00490010 26  27   .rodata ascii   Wrong key, ...try again...
+2    0x0009002b 0x0049002b 9   10   .rodata ascii   Good luck
+3    0x00090035 0x00490035 26  27   .rodata ascii   Developed by Binary Newbie
+4    0x00090050 0x00490050 19  20   .rodata ascii   Nop...try again...\n
+5    0x00090064 0x00490064 18  19   .rodata ascii   Invalid length...\n
+6    0x00090077 0x00490077 15  16   .rodata ascii   Usage %s <key>\n
+
+The fact that the program holds readable string data shows that the binary is not packed, the first step is finding main. This should be possible by searching for where the string data is cross-referenced in
+the program. This can also be done by following form the '_start()' function. The first block of code in main looks like this:
+
+00401610  push    rbx {__saved_rbx}
+00401611  mov     rbx, rsi
+00401614  sub     rsp, 0x10
+00401618  mov     rax, qword [fs:0x28]
+00401621  mov     qword [rsp+0x8 {canary}], rax
+00401626  xor     eax, eax  {0x0}
+00401628  cmp     edi, 0x2                        ; Check (argc == 2)
+0040162b  jne     0x401692
+
+As you can see from the comment I've included you can see all that's happening here is a check on argc, if this check is failed the program prints out a usage message indicationg the need for an argument to
+be provided. If this check is passed the program will continue executing to this next block of code:
+
+----------------------------------------------------------------------------------------------------------------------------------------
+
+0040162d  xor     ecx, ecx  {0x0}
+0040162f  xor     edx, edx  {0x0}
+00401631  xor     esi, esi  {0x0}
+00401633  xor     edi, edi  {0x0}
+00401635  call    sub_448430
+0040163a  add     rax, 0x1
+0040163e  je      0x4016ca
+
+Now it's impossible to determine what's going on here as the binary is stripped, all we can say without using a debugger is that the function requires 4 arguments (all zeroes in this case) are being passed
+to the function. I will be using 'radare2' as it's the ddebugger I'm most familiar with. First I dumped all general purpose register values just before the function call
+
+rax = 0x00000000
+rbx = 0x7fffc20cda38
+rcx = 0x00000000
+rdx = 0x00000000
+r8 = 0x00000000
+r9 = 0x00000002
+r10 = 0x00000002
+r11 = 0x00000001
+r12 = 0x00402e30
+r13 = 0x00000000
+r14 = 0x004b8018
+r15 = 0x00000000
+rsi = 0x00000000
+rdi = 0x00000000
+rsp = 0x7fffc20cd900
+rbp = 0x00402da0
+rip = 0x00401635
+rflags = 0x00000246
+orax = 0xffffffffffffffff
+
+The values after the function call are now:
+
+rax = 0xffffffffffffffff
+rbx = 0x7fffc20cda38
+rcx = 0x00000000
+rdx = 0xffffffffffffffc0
+r8 = 0xffffffff
+r9 = 0x00000002
+r10 = 0x00000000
+r11 = 0x00000286
+r12 = 0x00402e30
+r13 = 0x00000000
+r14 = 0x004b8018
+r15 = 0x00000000
+rsi = 0x00000000
+rdi = 0x00000000
+rsp = 0x7fffc20cd900
+rbp = 0x00402da0
+rip = 0x0040163a
+rflags = 0x00000202
+orax = 0xffffffffffffffff
+
+Now considering the call is followed by an 'add' instruction then a 'je' function this makes me think the function returns a boolean value as the return value was -1 if signed. I put in a test argument of
+'AAAAAAAA'.
+
+I think this function is a call to 'ptrace()' as my results show a return value after the call of '0xffffffffffffffff' (-1 or largest 64 bit number), then the 'add rax, 1' would round this value over to zero, 
+(this being a value of false) failing the check.
+
+Looking past that for now, the next block of code that will run during normal execution we see a function call at the top which will just print out some prompts to the user (nothing of note there), I'm not going
+to past any of the code from that function here as it's not relevant to the password. The block of code I've just explained however looks like this:
+
+00401644  call    sub_401e20
+00401649  lea     rdi, [rel data_4900f0]  {"Humm lets see what you are doing…"}
+00401650  call    puts
+00401655  mov     rdi, qword [rbx+0x8]
+00401659  mov     rax, rdi
+0040165c  nop     dword [rax], eax
+
+For this section of code I was pretty confident that the address in [RBX + 8] is a pointer to 'argv[1]', to check this I stepped in a debugger to the 'ptrace' check branch, after this function call has completed
+I changed the value of 'RIP' so as the program continues executing normally.
+
+----------------------------------------------------------------------------------------------------------------------------------------
+
+This is followed by a simple loop that just calculates the length of the key we provided, then a check on the result (after some subtraction), this should give us a key length of 11:
+
+00401660  add     rax, 0x1  // Loop to calculate string length of argv[1]
+00401664  cmp     byte [rax-0x1], 0x0
+00401668  jne     0x401660
+
+0040166a  sub     rax, rdi
+0040166d  cmp     rax, 0xb
+00401671  je      0x4016ee
+
+Continuing with the debugger, I checked whis with a key that was 11 bytes long. Reading the value from 'RAX' at the compare I was left with the value '0xc' from this I saw I needed to adapt my key length to 10
+bytes and the check will be passed.
+If this check is failed, a message is printed to the user telling them the key is 'Invalid length...',
+
+----------------------------------------------------------------------------------------------------------------------------------------
+
+The next block of code just sets up two arguments (a pointer to our key and the length in bytes), before calling a function to check our key, I have labelled this function appropriately.
+This code block looks like this:
+
+004016ee  mov     byte [rdi+0xa], 0x0
+004016f2  mov     esi, 0xa
+004016f7  call    key_test
+
+----------------------------------------------------------------------------------------------------------------------------------------
+
+The first block of code in the 'key_test' function just push some values to the stack, calls a dynamic memory allocation function (I inferred this from the fact that the function has
+some error messages in that suggest this), then the value of 'R12' is tested. Not sure what this is doing as I am unsure of the value of 'R12'. Running this code through a debugger I was able to check this value along with confirming the aforementioned function allocates memory on the heap. 'R12' Seems to hold the value '0xa' that was passed as an argument to the function
+(the length of our key). Given this information there is no reason that this check should fail.
+
+00401d10  push    r12 {var_8}
+00401d12  mov     r12, rsi
+00401d15  push    rbp {var_10}
+00401d16  mov     rbp, rdi
+00401d19  mov     rdi, rsi
+00401d1c  push    rbx {var_18}
+00401d1d  sub     rsp, 0x10
+00401d21  mov     rax, qword [fs:0x28]
+00401d2a  mov     qword [rsp+0x8 {var_20}], rax
+00401d2f  xor     eax, eax  {0x0}
+00401d31  call    sub_41ecc0                        ; malloc_type routine
+00401d36  mov     rbx, rax
+00401d39  test    r12, r12
+00401d3c  je      0x401de7
+
+----------------------------------------------------------------------------------------------------------------------------------------
+
+After this check has been passed, there are some registers loaded with values followed by a simple loop:
+
+00401d42  mov     edx, 0x61                         ; Decimal - 97
+00401d47  xor     eax, eax  {0x0}
+00401d49  nop     dword [rax], eax
+
+00401d50  mov     byte [rbx+rax], dl                ; Store byte in 'DL' into [rbx + rax], (this memory address doesn't change)
+00401d53  add     edx, 0x1                          
+00401d56  lea     eax, [rdx-0x61]
+00401d59  movsx   rax, ax
+00401d5d  cmp     rax, r12
+00401d60  jb      0x401d50
+
+This loop places the ascii character 'a' into the address stored in [RBX + RAX], this address stays constant so the loop just changes the same byte on each iteration through. The loop
+will loop through 10 times, incrementing and overwriting the same byte in memory.
+After this piece of code has executed we move on to a section of code that I'm not 100% sure about, but would say it's some form of length check, it looks like this:
+
+00401d62  mov     r10, r12  // r12 = 10
+00401d65  mov     byte [rbx+r12], 0x0
+00401d6a  xor     ecx, ecx  {0x0}
+00401d6c  xor     edi, edi  {0x0}
+00401d6e  sub     r10, 0x1
+00401d72  je      0x401da7
+
+If my guess is correct this check should pass every time we've provided a key. 'r12' should still have the value of 10 so after the 'sub r10, 0x1' instruction 'r10' should have the value
+of 9 which should pass the check.
+
+----------------------------------------------------------------------------------------------------------------------------------------
+
+After this we have the pointer to a heap memory address that was previously allocated moved into the 'rdi' register, then 'eax' and 'edx' are both zero'd out.
+
+00401d78  add     rdi, rbx          ; Pointer to heap_memory
+00401d7b  xor     edx, edx  {0x0}
+00401d7d  xor     eax, eax  {0x0}
+00401d7f  nop     
+
+After these registers are prepared the program will begin a loop, the loop should iterate 8 times as the conditional branch is a 'jb' and the value that the counter (RAX) is being
+compared to should be 9 (the value of r12 - 1).
+
+00401d80  add     rax, rbx          ; increments the heap pointer
+00401d83  movzx   r8d, byte [rdi]
+00401d87  movzx   r9d, byte [rax]
+00401d8b  mov     byte [rdi], r9b   ; Places the value of 'r9b' onto the heap
+00401d8e  mov     byte [rax], r8b
+00401d91  lea     eax, [rdx+0x1]
+00401d94  mov     rdx, rax
+00401d97  cmp     rax, r10          ; Should still have the value decimal - 9
+00401d9a  jb      0x401d80
+
+Then we have a small check (not sure on what exactly, but looking futher ahead it doesn't seem to matter). Then some registers are zero'd out and another loop will begin to execute:
+
+00401d9c  lea     edi, [rcx+0x1]
+00401d9f  mov     rcx, rdi
+00401da2  cmp     rdi, r12          ; r12 should still be 10
+00401da5  jb      0x401d78
+
+00401da7  xor     edx, edx  {0x0}
+00401da9  xor     esi, esi  {0x0}
+00401dab  xor     eax, eax  {0x0}
+00401dad  nop     dword [rax], eax
+
+----------------------------------------------------------------------------------------------------------------------------------------
+
+This next loop seems to be relevant to the eventual correct password, for that reason I will set a debugger so I can read any values to try and get an idea of what the program is doing.
+
+BLOCK_1:
+00401db0  movzx   ecx, byte [rbp+rax]  ; Starts at the start of our key (it is still unchanged at this point)
+00401db5  cmp     byte [rbx+rax], cl   ; Heap memory (at the start of the loop hold the string 'jcdefghiab')
+00401db8  sete    al                   ; 'AL' = 1 if equal, else 'AL' = 0
+00401dbb  add     edx, 0x1
+00401dbe  movzx   eax, al
+00401dc1  sub     esi, eax
+00401dc3  movsx   rax, dx
+00401dc7  cmp     r12, rax
+00401dca  ja      0x401db0
+
+We know that 'RAX' is zero at the start of this loop due to 'EAX' being XOR'd in the previous block of code, also as 'RAX' doesn't seem to have held any values requiring more than
+32 bits there shouldn't be any bits left on after this XOR instruction. The value of 'R12' should still be 10 so given that the conditional jump instruction is a 'ja' the loop should
+iterate a total of 9 times. I have included the next block of code and labelled them accordingly as it will be easier to follow, BLOCK_2 is the final conditional branch to get to the win
+message:
+
+BLOCK_2:
+00401dcc  mov     eax, 0xdeadbeef
+00401dd1  mov     ecx, r12d
+00401dd4  shr     eax, cl
+00401dd6  and     eax, 0xc
+00401dd9  xor     esi, eax
+00401ddb  mov     eax, 0x4
+00401de0  sub     eax, esi
+00401de2  cmp     rax, r12
+00401de5  je      0x401e05
+
+Just on the off chance I tested the string that is stored on the heap in 'BLOCK_1' and this turns out to be the password, it would seem that the only relevant parts of this program is
+the forming of the password to be checked against and the final check of the 2 strings (user_input & actual_key). The rest is just the use of so called 'dead code' as a basic form of
+obfuscation. Opening the '.zip' file with the aquired password we are awarded with the source code and a 'flag.txt' file with the flag:
+
+FL4G{Ass1st4nt_Pr0f3ss0r}

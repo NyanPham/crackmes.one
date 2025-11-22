@@ -1,0 +1,46 @@
+this challenge about understanding c++ sting class there is lots of string
+allocation which might distract you. There couple of interesting global strings
+there are two random strings zg2z8h4z2z and another "S5do7apOWcl``clx"
+the second sting is the solution we should try to reach as its is compared to
+the input, of course the input is xord before comparing multiple time.
+
+understanding the xor sequence the help you to crack the solution. below python
+code is the solution.
+
+first i have translated the problem binary code to python code and then solution
+python code.
+<--------------code---------------->
+
+incor_str = "Incorrect password, ganbatte kudasai!"
+corr_str = "Your password is correct!"
+key = "zg2z8h4z2z"
+dest = "S5do7apOWcl``clx"
+usr_inp = ""
+
+def dcy(input_str, key):
+    count = 0
+    solu = ""
+    for i in list(input_str):
+        sol = chr(ord(i) ^ ord(key[count]))
+        count += 1
+        if count >= len(key):
+            count = 0
+        solu += sol
+    return solu
+
+# problem code translated to python
+
+sol_1 = dcy(incor_str, key)
+sol_2 = dcy(corr_str, key)
+sol_3 = dcy(usr_inp, key)
+sol_4 = dcy(sol_3, sol_2)
+
+
+# solution
+sol_1 = dcy(incor_str, key)
+sol_2 = dcy(corr_str, key)
+xx = dcy(sol_2, dest)
+yy = dcy(sol_1,xx)
+print(yy[:len(dest)])
+
+<---------------code---------------->

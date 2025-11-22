@@ -1,0 +1,212 @@
+This is my hacklog so it might not always be so structured as you would like it to be ;)
+But it is all there :) 
+
+First of all I started this crack with the 32 bit version so the address might be a bit different if you are using the 64 bit version. Moreover the 32 bit version has an error :S So use the 64 bit version from the start. 
+
+Step 1) 
+
+Getting the assembler from the binary.
+You can do this by firing up gdb as follows:
+gdb crackme1_64bit   
+(gdb) disass main 
+Dump of assembler code for function main:
+   0x0000000000400834 <+0>:	push   %rbp
+   0x0000000000400835 <+1>:	mov    %rsp,%rbp
+   0x0000000000400838 <+4>:	sub    $0x50,%rsp
+   0x000000000040083c <+8>:	mov    %fs:0x28,%rax
+...   
+
+Step 2)
+Lets run the program and use a random code
+
+(gdb) run
+Starting program: crackme1_64bit 
+Please enter the secret number: 30912481902
+Nope.
+[exited with code 01]
+
+Step 3)
+Why did we get thrown out ?
+To find out inspect the code and see the call (0x0804867d) to scanf.
+This is where the number is read. 
+We place a breakpoint just after this point and then step through the code.
+In gdb you do that with "ni".
+
+We discover the following instruction:
+0x0804869f <+83>:	call   0x804860d <nope>
+So if we get there the password was wrong :)
+How did we get there again => 
+0x0804868b <+63>:	jne    0x804869f <main+83>
+
+Lets look in detail:
+
+   0x0804868d <+65>:	movzbl 0x36(%esp),%eax
+   0x08048692 <+70>:	cmp    $0x39,%al
+   0x08048694 <+72>:	jne    0x804869f <main+83>
+
+Ok so we should have typed in 9 somewhere (hex 0x39) (see cmp at +70)
+
+A little bit below we find:
+
+   0x08048696 <+74>:	movzbl 0x35(%esp),%eax
+   0x0804869b <+79>:	cmp    $0x36,%al
+   0x0804869d <+81>:	je     0x80486a6 <main+90>
+
+We should have also typed in 6 (hex 0x36) (see cmp at +79)
+
+Ok the password must be 69 :) how cheesy 
+
+Step 4) 
+We run it again unfortunately it was still not correct. 
+Lets look further in the code what main+90 does. 
+Holy crap it is a bit more involved than I thought :) 
+
+Lets annotate the code  
+ 
+   bla bla bla
+   0x080486a6 <+90>:	mov    0x804a040,%eax
+   0x080486ab <+95>:	mov    %eax,(%esp)
+   0x080486ae <+98>:	call   0x8048480 <fflush@plt>
+   
+   [2d => 0] [31 => 0] [45 => 2d]
+   0x080486b3 <+103>:	movl   $0x0,0x2d(%esp)
+   0x080486bb <+111>:	movl   $0x0,0x31(%esp)
+   0x080486c3 <+119>:	movb   $0x45,0x2d(%esp)
+   
+   [18 => 1] [1c => 2] [20 => 3] [24 => 4]
+   0x080486c8 <+124>:	movl   $0x1,0x18(%esp)
+   0x080486d0 <+132>:	movl   $0x2,0x1c(%esp)
+   0x080486d8 <+140>:	movl   $0x3,0x20(%esp)
+   0x080486e0 <+148>:	movl   $0x4,0x24(%esp)
+   
+   0x080486e8 <+156>:	jmp    0x804875a <main+270>
+   
+   load the adress of our password string
+   0x080486ea <+158>:	lea    0x35(%esp),%edx
+   load 1c into eax
+   0x080486ee <+162>:	mov    0x1c(%esp),%eax
+   the next two instructions are basically password[1c]
+   0x080486f2 <+166>:	add    %edx,%eax
+   0x080486f4 <+168>:	movzbl (%eax),%eax
+   and put this value in 15(esp)
+   0x080486f7 <+171>:	mov    %al,0x15(%esp)
+   
+   
+   This does the same as the previous instructions but index with 20(esp) and store in 16esp
+   0x080486fb <+175>:	lea    0x35(%esp),%edx
+   0x080486ff <+179>:	mov    0x20(%esp),%eax
+   0x08048703 <+183>:	add    %edx,%eax
+   0x08048705 <+185>:	movzbl (%eax),%eax
+   0x08048708 <+188>:	mov    %al,0x16(%esp)
+   
+   This does the same as the previous instructions but index with 20(esp) and store in 16esp
+   0x0804870c <+192>:	lea    0x35(%esp),%edx
+   0x08048710 <+196>:	mov    0x24(%esp),%eax
+   0x08048714 <+200>:	add    %edx,%eax
+   0x08048716 <+202>:	movzbl (%eax),%eax
+   0x08048719 <+205>:	mov    %al,0x17(%esp)
+   
+   The following instruction check that the string in 2d(esp) is of length 7 or bigger.
+   0x0804871d <+209>:	lea    0x2d(%esp),%eax
+   0x08048721 <+213>:	mov    %eax,(%esp)
+   0x08048724 <+216>:	call   0x80484d0 <strlen@plt>
+   0x08048729 <+221>:	cmp    $0x7,%eax
+   
+   The following instructions convert the string starting at 15(%esp) to a number and store in
+   2d(esp)[ 18(esp) ]
+   0x0804872c <+224>:	ja     0x8048746 <main+250>
+   0x0804872e <+226>:	lea    0x15(%esp),%eax
+   0x08048732 <+230>:	mov    %eax,(%esp)
+   0x08048735 <+233>:	call   0x8048500 <atoi@plt>
+   0x0804873a <+238>:	lea    0x2d(%esp),%ecx
+   0x0804873e <+242>:	mov    0x18(%esp),%edx
+   0x08048742 <+246>:	add    %ecx,%edx
+   0x08048744 <+248>:	mov    %al,(%edx)
+   
+   Here increment a bunch of stuff
+   0x08048746 <+250>:	addl   $0x1,0x18(%esp)
+   0x0804874b <+255>:	addl   $0x3,0x1c(%esp)
+   0x08048750 <+260>:	addl   $0x3,0x20(%esp)
+   0x08048755 <+265>:	addl   $0x3,0x24(%esp)
+   we check that 1c is bigger than 0x14 if is not we jump back to 158
+   0x0804875a <+270>:	cmpl   $0x14,0x1c(%esp)
+   0x0804875f <+275>:	jle    0x80486ea <main+158>
+   
+   Here we check a string in 2d(esp) with a string in location $0x8048886
+   (gdb x/s $0x8048886 => "Evilzone"
+   0x08048761 <+277>:	movl   $0x8048886,0x4(%esp)
+   0x08048769 <+285>:	lea    0x2d(%esp),%eax
+   0x0804876d <+289>:	mov    %eax,(%esp)
+   0x08048770 <+292>:	call   0x8048460 <strcmp@plt>
+   0x08048775 <+297>:	test   %eax,%eax
+   0x08048777 <+299>:	jne    0x8048794 <main+328>
+   If it is not equal jump to 0x8048794 => you lost
+   
+   0x08048779 <+301>:	lea    0x2d(%esp),%eax
+   0x0804877d <+305>:	mov    %eax,0x4(%esp)
+   0x08048781 <+309>:	movl   $0x8048890,(%esp)
+   0x08048788 <+316>:	call   0x8048470 <printf@plt>
+   0x0804878d <+321>:	call   0x8048638 <yes>
+   0x08048792 <+326>:	jmp    0x8048799 <main+333>
+   0x08048794 <+328>:	call   0x804860d <nope>
+   0x08048799 <+333>:	mov    $0x0,%eax
+   0x0804879e <+338>:	mov    0x4c(%esp),%ebx
+   0x080487a2 <+342>:	xor    %gs:0x14,%ebx
+   0x080487a9 <+349>:	je     0x80487b0 <main+356>
+   0x080487ab <+351>:	call   0x8048490 <__stack_chk_fail@plt>
+   0x080487b0 <+356>:	mov    -0x4(%ebp),%ebx
+   0x080487b3 <+359>:	leave  
+   0x080487b4 <+360>:	ret   
+   
+
+Step 5)
+
+Reverse engineering the algorithm
+
+from 0x080486ea on we basically do this
+15(esp) = password[1c(esp)]
+16(esp) = password[20(esp)]
+17(esp) = password[24(esp)]
+
+Then we convert the string in 15 esp to a char (with atoi) and put it at place
+2d(esp) indexed by [18esp]
+
+And then we go increment some counters and go back. 
+We have three counters at X($esp)
+They are altered in each iteration
+
+18 1c 20  24  ($esp)
+1   2  3   4  (inital conditions)
+2   5  6   7  (after step 1)
+3   8  9  10   
+4  11 12  13
+5  14 15  16  (here we stop because of line 0x0804875a)
+
+We also know that our password is stored in
+0x35(%esp) "69"
+
+So naturally we are doing something like take three characters from our password 
+convert it to a char and then save it for comparison with the string 
+"Evilzone"
+
+So naturally the password should be (obviously without the spaces):
+69 045 118 105 108 122 111 110 101
+	E   v   i   l   z   o   n   e
+
+Lets try that -> Nope
+
+Step 6)
+Oeps indexing starts at 1 => 18($esp)
+And 
+   0x080486c3 <+119>:	movb   $0x45,0x2d(%esp)
+Alread sets the E !!
+
+
+(A lot of frustration here I deleted because I was using the 32 bit version)
+
+Lets try again (obviously without the spaces):
+69 118 105 108 122 111 110 101
+    v   i   l   z   o   n   e
+
+Whooohooowww we are in :) 
+

@@ -1,0 +1,10 @@
+This crackme works by getting the current unix time in seconds, and running a modulo on it by 3, so that every second the counter cycles through 3 possibilities: 0, 1, and 2. This number is then used in the password check in the following way: Some bytes of the password are bit-shifted to the left by the current cycle, then checked against a pre-programmed value.
+
+How to find the correct cycle number: 
+Theoretically any number could work, however in practice you will find that a value like 2, will cause some of the numbers to go above 8 bits, and each check is only preformed against an 8 bit number. Therefore we can rule out 2, as when we use that number, some will go out of range. Next I will try 0, which works, however some of the characters are control characters, so for now I will ignore that number. That leaves us at 1. When I bit shift to the right the hard-coded values, I come up with the password '%djk(9^{.f@1F4' When entered into the program, it works on the first try. To confirm that the time has something to do with it, I enter it again and it fails. Since there are 3 possible states, if you do not know the time you enter it, there is a 1/3 chance that the password will be validated. 
+
+
+Note: 
+A strange encoded method for printing to stdout was observed, Whenever a message was to be printed, there was an encoded string in the stack that was added by 5 and bit shifted left by 1. 
+
+- Rainer Zimmerman

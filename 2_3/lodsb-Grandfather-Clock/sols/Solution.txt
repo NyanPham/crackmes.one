@@ -1,0 +1,36 @@
+==========================================
+SOLUTION
+==========================================
+mystery@mystery:~/Documents/Grandfather Clock$ ./grandfather_clock CTFlag{_H4rm0n1c_0sc1ll4t0r}
+Congratulations! You've cracked the code!
+mystery@mystery:~/Documents/Grandfather Clock$
+==========================================
+END SOLUTION
+==========================================
+
+
+Explanation
+---------------
+By examining the program, we see that the function expects an argv[1], and it
+should have an even length. It then runs the string through a function that
+converts it to some sort of bytes, compares it with some hardcoded series of
+bytes, and then compares the two. So, I just need to figure out what the
+function does, and give the right input so that it has the right output
+
+It turns out that the function isn't that complicated. It goes through in some
+methodical manner, assigning each character in our input to some random spot
+in a duplicate array, after subtracting 0x20 from the char. It leaves the
+length the same, and it's easy to tell which character corresponds with which
+output.
+
+The rest had little do with assembly, C, gdb, Ghidra, or anything else. I
+could have been more analytical, but I just changed a number, saw where it
+corresponded to, saw what it should have been, and updated it. Through that
+process, and by finding the set of original characters, I figured out quickly
+what the original string should be.
+
+Now I'm going to go look at the source code with my hard-earned flag
+
+
+
+

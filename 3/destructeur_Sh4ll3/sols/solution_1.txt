@@ -1,0 +1,44 @@
+Author: erfur
+Date: Mon Aug 13 20:50:28 +03 2018
+Challenge: destructoid's Sh4ll3
+
+This is a C++ binary with lots of string allocations and some XOR's.
+First obvious thing to do is to rename the allocated variables:
+
+var int str1^correctstr^str1^incorrectstr^inputstr @ rbp-0x220
+var int str1^correctstr @ rbp-0x200
+var int str1^incorrectstr @ rbp-0x1e0
+var int inputstr @ rbp-0x1c0
+var int str2 @ rbp-0x1a0
+var int str1 @ rbp-0x180
+var int correctstr @ rbp-0x160
+var int incorrectstr @ rbp-0x140
+var int local_114h @ rbp-0x114
+var int local_113h @ rbp-0x113
+var int local_112h @ rbp-0x112
+var int local_111h @ rbp-0x111
+var int str1_2 @ rbp-0x110
+var int incorrectstr_2 @ rbp-0xf0
+var int str1_3 @ rbp-0xd0
+var int correctstr_2 @ rbp-0xb0
+var int str1^correctstr_2 @ rbp-0x90
+var int str1^incorrectstr^inputstr @ rbp-0x70
+var int str1^incorrectstr_2 @ rbp-0x50
+var int inputstr_2 @ rbp-0x30
+
+After renaming variables the XOR procedure becomes clear. Since str1 is
+XOR'ed twice, It's actually cancelled out. So we only need to xor
+correctstr, incorrectstr and inputstr to be equal to str2. Reverting the
+process back we can get the correct input. Python code to solve:
+
+>>> incorrectstr = 'Incorrect password, ganbatte kudasai!'
+>>> correctstr = 'Your password is correct!'
+>>> str1 = 'zg2z8h4z2z'
+>>> str2 = 'S5do7apOWcl``clx'
+>>> for i in range(len(str2)):
+...     print(chr(ord(correctstr[i%len(correctstr)])\
+					^ord(incorrectstr[i%len(incorrectstr)])\
+					^ord(str2[i%len(str2)]))\
+					, end='')
+... 
+C4rrect_P4ssw0rd

@@ -1,0 +1,13 @@
+The correct key is created in the xxx function as "pass" val and compared with
+the string entered in check_password.
+
+You can get the key by looking at the array containing the correct key being
+compared in the chack_password function.
+
+
+$ ./crack2-by-D4RK_FL0W                                  
+
+Please Enter The Password: isAAthisFunBBCCD
+
+
+***Correct You Cracked It***

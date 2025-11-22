@@ -1,0 +1,93 @@
+Condition needed to solve the problem:
+1. Provide the program with 3 arguments
+2. The length of 2nd and 3rd must be greater than 6 and divisible by 2
+3. The first four character for both 2nd and 3rd arguments should be identical and the rest is different
+
+
+Below is the decompilation result of main function using IDA pro:
+int __cdecl main(int argc, const char **argv, const char **envp)
+{
+  int result; // eax
+  size_t v4; // rbx
+  int i; // [rsp+1Ch] [rbp-34h]
+  int v6; // [rsp+20h] [rbp-30h]
+  int v7; // [rsp+24h] [rbp-2Ch]
+  char *v8; // [rsp+30h] [rbp-20h]
+  char *v9; // [rsp+38h] [rbp-18h]
+
+  if ( argc == 3 ) // check whether the program has 3 arguments
+  {
+    v8 = (char *)argv[1];
+    v9 = (char *)argv[2];
+    if ( strlen(argv[1]) > 6 ) // length of 2nd argument should be > 6
+    {
+      if ( strlen(v9) > 6 ) // length of 3rd argument should be > 6
+      {
+        v4 = strlen(v8);
+        if ( v4 == strlen(v9) ) // length of 2nd and 3rd argument must be same
+        {
+          if ( strlen(v8) & 1 ) // check whether length of 2nd argument is odd number
+          {
+            puts("Abby & Gabby: we are not \"odd\" years old :(");
+            puts("good luck next time");
+            result = 0;
+          }
+          else // if it's even number
+          {
+            v6 = strlen(v8) >> 1; // shift right the length of 2nd argument.
+                                  // ex: 8 >> 1 is 4
+                                  // 8 in binary is 01000
+                                  // 01000 shifted 1 time -> 00100 (number 1 is moving 1 time to the right)
+                                  // read more at: https://en.wikipedia.org/wiki/Bitwise_operations_in_C
+            for ( i = 0; i < v6; ++i ){ // determine whether the first four character for 2nd and 3rd argument is identical or not
+              if ( v8[i] != v9[i] ){    // if it's not then return
+                puts("Abby & Gabby: we're half twins you know...");
+                puts("good luck next time");
+                return 0;
+              }
+            }
+            v7 = strlen(v8);
+            while ( i < v7 ) // determine whether the rest character of 2nd and 3rd argument is identical or not
+            {
+              if ( v8[i] == v9[i] ) // if it's then return
+              {
+                puts("Abby & Gabby: we are only HALF twins... :3 ");
+                puts("good luck next time");
+                return 0;
+              }
+              ++i;
+            }
+            // if it's not identical
+            puts("Abby & Gabby: yaayy!! nice job! :D");
+            result = 0;
+          }
+        }
+        else
+        {
+          puts("Abby & Gabby: for god's sake we are TWINS! we were born the same night!!");
+          puts("good luck next time");
+          result = 0;
+        }
+      }
+      else
+      {
+        puts("Gabby: i'm older than that :(");
+        puts("good luck next time");
+        result = 0;
+      }
+    }
+    else
+    {
+      puts("Abby: i'm older than that :(");
+      puts("good luck next time");
+      result = 0;
+    }
+  }
+  else
+  {
+    puts("hmm... i'm not sure you know what the word \"twins\" mean :/");
+    puts("good luck next time");
+    result = 0;
+  }
+  return result;
+}

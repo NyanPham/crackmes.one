@@ -1,0 +1,102 @@
+To solve this crackmes I use radare2.
+
+First of all, we will analyze the file and inspect the functions:
+
+[0x7f555592f100]> aaaa
+[x] Analyze all flags starting with sym. and entry0 (aa)
+[x] Analyze function calls (aac)
+[x] Analyze len bytes of instructions for references (aar)
+[x] Finding and parsing C++ vtables (avrr)
+[x] Skipping type matching analysis in debugger mode (aaft)
+[x] Propagate noreturn information (aanr)
+[x] Finding function preludes
+[x] Enable constraint types analysis for variables
+[0x7f555592f100]> afl
+0x55898de360e0    1 46           entry0
+0x55898de38fe0    1 4121         reloc.__libc_start_main
+0x55898de36090    1 11           sym.imp.puts
+0x55898de360a0    1 11           sym.imp.strlen
+0x55898de360b0    1 11           sym.imp.__stack_chk_fail
+0x55898de360c0    1 11           sym.imp.printf
+0x55898de35000    3 348  -> 341  loc.imp._ITM_deregisterTMCloneTable
+0x55898de360d0    1 11           sym.imp.exit
+0x55898de361c9   13 326          main
+... other func ...
+
+So, we see the main function, let's explore it:
+
+[0x7f555592f100]> pdf @ main
+
+At the very beginning, you can see the initialization of variables and check 
+the number of arguments entered. From this we can understand that the program 
+expects some kind of argument from us to enter, most likely it is a password:
+
+0x55898de361d5      897dbc         mov dword [var_44h], edi ; argc
+...
+0x55898de36227      837dbc02       cmp dword [var_44h], 2
+
+Since we haven't passed any passwords yet, let's see what code comes after:
+
+0x55898de3625e      e83dfeffff     call sym.imp.strlen
+0x55898de36263      4883f808       cmp rax, 8
+
+From this piece, it can be seen that the password must be eight characters long, 
+otherwise the program ends. Let's try to restart the debugger and pass a password 
+with a length of 8 characters:
+
+[0x7f555592f100]> ood AAAAAAAA
+child received signal 9
+File dbg:///home/sam/ezwan2/EZwan2 AAAAAAAA reopened in read-write mode
+2811
+
+Let's go back to the main function, after checking the pass len we see a loop, let's 
+explore it:
+
+0x55898de36288      8b45c8         mov eax, dword [var_38h]
+0x55898de3628b      83e00f         and eax, 0xf
+
+At the beginning of the loop, the variable that was set at the beginning of the program is 
+logically multiplied by 15. The resulting number is used to get the character with which our 
+password will be compared:
+
+movzx edx, byte [rbp + rax - 0x30] // Get password byte
+...
+movzx eax, byte [rax] // Get our password byte
+cmp dl, al // Compare 2 bytes
+
+The idea of checking the password is clear. Now we need to understand where the symbols come from. 
+Let's check the address to get the password character, but remove rax from the address expression:
+
+[0x564c922cf297]> px @ rbp - 0x30
+- offset -       0 1  2 3  4 5  6 7  8 9  A B  C D  E F  0123456789ABCDEF
+0x7fffc1c13740  436f 6e67 7261 7475 6c61 7469 6f6e 7320  Congratulations 
+0x7fffc1c13750  796f 7520 6469 6420 6974 2100 4c56 0000  you did it!.LV..
+
+So, the password is checked based on the string. At the end of each iteration, you can see that the 
+original number for determining the character is shifted 4 bits to the right:
+
+shr dword [rbp - 0x38], 4
+
+Let's write a python script that will calculate all the characters of the password:
+
+>>> str = "Congratulations you did it!"
+>>> num = 0x32b6e514
+>>> for i in range(0,8):
+...     print(str[num & 0xf])
+...     num = num >> 4
+...
+r
+o
+a
+s
+t
+i
+n
+g
+
+So, our password is: roasting
+Let's try:
+
+sam@sam:~/ezwan2$ ./EZwan2 roasting
+Checking Password: roasting
+Congratulations you did it!

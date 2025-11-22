@@ -1,0 +1,26 @@
+URL
+https://crackmes.one/crackme/5c8d45c333c5d4776a837ec2
+
+Operating System
+Linux x64 (ELF ./license)
+
+Process
+• The main function checks if at least one parameter has been provided, it exits if it does not.
+• A checksum variable is initiated to 0
+• A loop starts, which basically is a for (int i = 0; i < strlen(argv[1]); i+= 1)
+   ◇ checksum = current_password_character * strlen(input) * strlen(input)
+• if (checksum = 0xCDAA) then password is correct 
+
+Analysis
+We need a password of which the checksum algorithm results in 0xCDAA. This means that we need to find 
+a way to multiply each character in a password by strlen(input)^2 and add it to the checksum. This could 
+be brute forced, however there must be a smarter solution than that. 
+
+Solution
+I wrote a simple bruteforce keygen (I wanted to do it without brute first, but I couldn't manage) that uses 
+rand() to generate random strings of characters and each time a string results in the 0xCDAA checksum it 
+lists that string as valid password. 
+
+It seems that a length of 9 characters with a [a-zA-Z0-9] character set is perfect, however the keygen program
+can be invoked with two parameters to generate strings of different lengths. Invoke: ./keygen 50 to generate 
+50 different passwords that are all valid. See keygen.cpp for the code! It will timeout after 5 seconds.

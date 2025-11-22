@@ -1,0 +1,49 @@
+Hello all!! 
+This is my first crackme writeup so please excuse me if the explanation is a bit bad.
+
+Getting straight to the point:
+ltrace, strace and strings did not provide anything valuable (I did notice "strlen" while running strings but that did not help it at all)
+So I opened IDA and the whole graph made the thing very clear, here's my pseudo code which I figured out from the assembly dump.
+
+int main(int argc, char **argv)
+{
+   int start;
+   int end;
+   len = strlen(*argv)
+   end = len-1;
+   start = end;
+   
+   while((start-1)!= '/')
+   {
+   start = start-1;
+   }
+   
+   while(True)
+   {
+       if(end<=start)
+            {
+                 puts("That's exactly what I want");
+            }
+       if(start ! = end)
+            {
+                 puts("Gimme what I want");
+            }
+   end = end-1;
+   start = start+1;
+   }
+}
+   
+So, basically what the program does is 3 things:
+1. It gets the length of argv[0] (which is exactly "./(program)"
+2. It looks for the "/" character inside the argv[0]
+3. If the characters on the left side of "/" (start) is greater than that of right side (end) it prints the flag message.
+
+Putting a "/" between argv[0] means to run the program from a different directory, so I created a directory inside my crackme directory called it "ed" copied the program there and renamed it "r"
+now when I ran it from my crackme directory like this:
+
+root@anir:~/Documents/crackmes/CorC++/chillywilly# ./ed/r
+That's exactly what I wanted!
+
+Thank you again chillywilly for this one, enjoyed it! I hope to post more solutions from now on.
+
+~ アニー 

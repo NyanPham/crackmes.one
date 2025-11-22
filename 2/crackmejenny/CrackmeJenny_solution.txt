@@ -1,0 +1,54 @@
+Crackme: sraboy's CrackmeJenny
+Solved by: acruel, 07/24/2016
+Tools used: IDA v6.9
+
+Solution:
+$ ./release jenny@8675309
+Your key: 13284645-2427364-104376652
+$ ./release llllm@8675300
+Your key: 13284645-2427364-104376652
+$
+
+This tutorial is based on the developer mode.
+
+The code first checks if at least one argument is given. Then it gives the write permission to the pages that covers the function add(). Then it computes two checksums, jennyxor and phonexor. The value of jennyxor must be 0x295DDA9.
+
+We assume that the number of argument is 1, i.e. argc == 2, because the code only cares about the first argument. This assumption turns out to be correct. Then, the code below tells us that the 6th character of the argument is '@'.
+
+.text:00000000004008FF                 mov     rax, [rbp+argv]
+.text:0000000000400906                 add     rax, 8
+.text:000000000040090A                 mov     rcx, [rax]
+.text:000000000040090D                 mov     eax, [rbp+argc]
+.text:0000000000400913                 lea     edx, [rax+3]
+.text:0000000000400916                 test    eax, eax
+.text:0000000000400918                 cmovs   eax, edx
+.text:000000000040091B                 sar     eax, 2
+.text:000000000040091E                 mov     ebx, eax
+.text:0000000000400920                 mov     eax, [rbp+argc]
+.text:0000000000400926                 cdq
+.text:0000000000400927                 idiv    ebx
+.text:0000000000400929                 cdqe
+.text:000000000040092B                 add     rax, 1
+.text:000000000040092F                 add     rax, rcx
+.text:0000000000400932                 movzx   eax, byte ptr [rax]
+.text:0000000000400935                 movsx   eax, al
+.text:0000000000400938                 mov     edx, [rbp+argc]
+.text:000000000040093E                 shl     edx, 2
+.text:0000000000400941                 add     edx, edx
+.text:0000000000400943                 cmp     eax, edx
+.text:0000000000400945                 jnz     loc_400C65
+
+
+The following code computes the key and prints it on the screen. In the course of the computation, the code modifies the function add() twice.
+
+The first modification overwrites the opcode of the instruction below. From the debug messages, we can assume the new opcode is sub, i.e. 0x29.
+
+.text:0000000000400D88                 add     ecx, edx
+
+
+The opcode is computed based on the 6th, 9th, 11th, 12th characters of the first argument. They have to meet the following condition in pseudocode.
+
+   ord('@') - int(argv[1][10:12]) + ord(argv[1][8]) - 0x30 == 0x29
+
+
+When the above condition is met, the key always turns out to be 13284645-2427364-104376652. Therefore we have only to choose the other characters so that the checksum condition for jennyxor is met. There are many such possibilities like jenny@8675309 and llllm@8675300.
